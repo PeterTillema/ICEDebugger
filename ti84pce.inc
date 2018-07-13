@@ -3017,6 +3017,14 @@ plotSScreen		equ 0D09466h ; 21945 bytes	; Set GraphDraw Flag to redraw graph if 
 saveSScreen		equ 0D0EA1Fh ; 21945 bytes	; Set GraphDraw Flag to redraw graph if used
 cursorImage		equ 0E30800h ; 1020 bytes
 
+usbArea			equ 0D13FD8h ; 14306 bytes used for usb, probably need to disable timer3/usb interrupts to use
+usbInited		equ 0D177B7h ; zero this byte while using usbArea and to reset the usb stack when interrupts are re-enabled
+heapBot			equ 0D1887Ch ; 1024 bytes used for flash ram routines, rest used rarely
+ramCodeTop		equ 0D18C7Ch
+heapTop			equ 0D1987Ch
+stackBot		equ 0D1987Eh
+stackTop		equ 0D1A87Eh
+
 ;semiSafeRAM Locations
 ;---------------------------------------------
 tempStr			equ 0D17731h ; unknown size
