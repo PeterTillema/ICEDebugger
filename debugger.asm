@@ -1,9 +1,9 @@
 #include "ti84pce.inc"
 
-#define PROG_SIZE        0
-#define PROG_START       3
-#define DBG_PROG_SIZE    6
-#define DBG_PROG_START   9
+#define PROG_SIZE      0
+#define PROG_START     3
+#define DBG_PROG_SIZE  6
+#define DBG_PROG_START 9
 
 start:
 	.db	083h
@@ -13,53 +13,38 @@ start:
 ; Here we actually start; the ICE program can check for these 3 bytes to make sure the debugger is loaded
 	jr	GotoDebugger
 
-; DE = program name, store it
+; DE = compiled program name, store it
 	ld	iy, cursorImage
-	call	_ZeroOP1
-	ex	de, hl
-	push	hl
+	ex	de, hl				; Input is DBG file
+	call	_Mov9ToOP1
+	call	_ChkFindSym			; Find program, must exists
+	jr	c, Return
+	ld	bc, 0
+	ex	de, hl				; Get size
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	ld	(iy + DBG_PROG_SIZE), bc	; Store size + pointers
+	ld	(iy + DBG_PROG_START), hl	; HL points to the source program now
 	dec	hl
 	call	_Mov9ToOP1
-	ld	a, ProtProgObj
+	ld	a, ProgObj
 	ld	(OP1), a
-	call	_ChkFindSym			; Find program, must exists
-	jr	c, PopReturn
-	ld	bc, 0
-	ex	de, hl				; Get size
-	ld	c, (hl)
-	inc	hl
-	ld	b, (hl)
-	inc	hl
-	inc	hl				; Skip EF 7B bytes
-	inc	hl
-	ld	(iy + PROG_SIZE), bc		; Store size + pointers
-	ld	(iy + PROG_START), hl
-	call	__strlen
-	ld	a, l
-	cp	a, 6
-	jr	c, AppendDBG
-	ld	hl, OP1 + 7
-	jr	InsertDBG
-AppendDBG:
-	ld	de, OP1 + 1
-	add	hl, de
-InsertDBG:
-	ld	de, 'D' + ('B' << 8) + ('G' << 16)
-	ld	(hl), de
 	call	_ChkFindSym			; Find debug program, must exists
-	jr	c, PopReturn
+	jr	c, Return
 	ld	bc, 0
 	ex	de, hl				; Get size
 	ld	c, (hl)
 	inc	hl
 	ld	b, (hl)
 	inc	hl
-	ld	(iy + DBG_PROG_SIZE), bc	; Store pointers
-	ld	(iy + DBG_PROG_START), hl
-PopReturn:
-	pop	bc
+	ld	(iy + PROG_SIZE), bc		; Store pointers
+	ld	(iy + PROG_START), hl
+Return:
 	sbc	hl, hl
 	inc	hl
+	ld	iy, flags
 	ret
 
 GotoDebugger:
@@ -71,14 +56,15 @@ GotoDebugger:
 	push	de
 	push	hl
 	push	iy
-	ld	a, (mpLcdCtrl)
-	push	af
+	ld	hl, (mpLcdCtrl)
+	push	hl
 	ld	hl, (mpLcdUpbase)
 	push	hl
 	push	ix
 	ld	ix, 0
 	add	ix, sp
 	
+	push	de
 	ld	iy, cursorImage
 	di
 	ld	a, lcdBpp1
@@ -94,6 +80,8 @@ GotoDebugger:
 	inc	de
 	ld	bc, 320 * 240 / 8 - 1
 	ldir
+
+; Backup first 2 palette entries
 	ld	hl, mpLcdPalette
 	ld	de, cursorImage
 	ld	c, 4
@@ -107,8 +95,11 @@ GotoDebugger:
 	ld	(hl), b
 	dec	hl
 	ld	(hl), b
+	pop	de
 	
-; Restore variables and registers
+; Main code
+	
+; Restore palette, variables and registers
 	ld	de, mpLcdPalette
 	ld	hl, cursorImage
 	ld	bc, 4
@@ -117,8 +108,8 @@ GotoDebugger:
 	pop	ix
 	pop	hl
 	ld	(mpLcdUpbase), hl
-	pop	af
-	ld	(mpLcdCtrl), a
+	pop	hl
+	ld	(mpLcdCtrl), hl
 	pop	iy
 	pop	hl
 	pop	de
