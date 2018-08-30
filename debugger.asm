@@ -83,7 +83,7 @@ DebuggerCode2:
 	ld	hl, mpLcdCtrl
 	ld	(hl), a
 	inc	hl
-	set	3, (hl)
+	set	2, (hl)
 	ld	hl, SCREEN_START
 	ld	(mpLcdUpbase), hl
 	ld	(hl), 0
@@ -107,9 +107,6 @@ DebuggerCode2:
 	ld	(hl), c
 	
 ; Main code
-	scf
-	sbc	hl, hl
-	ld	(hl), 2
 	ld	(iy + X_POS), 1
 	ld	(iy + Y_POS), 1
 	ld	hl, StepThroughCodeString
@@ -126,6 +123,48 @@ DebuggerCode2:
 	ld	(iy + X_POS), 1
 	ld	(iy + Y_POS), 37
 	call	PrintString
+	ld	e, 0
+	
+PrintCursor:
+	ld	l, e
+	ld	h, 9
+	mlt	hl
+	inc	l
+	ld	(iy + Y_POS), l
+	ld	(iy + X_POS), h
+	ld	a, '>'
+	call	PrintChar
+CheckKeyLoop:
+	call	GetKeyFast
+	ld	l, 01Ch
+	bit	0, (hl)
+	jr	nz, SelectEntry
+	bit	6, (hl)
+	jr	nz, Quit
+	ld	l, 01Eh
+	bit	0, (hl)
+	jr	nz, MoveCursorDown
+	bit	3, (hl)
+	jr	z, CheckKeyLoop
+MoveCursorUp:
+	ld	a, e
+	or	a, a
+	jr	z, CheckKeyLoop
+	dec	e
+	jr	EraseCursor
+MoveCursorDown:
+	ld	a, e
+	cp	a, 4
+	jr	z, CheckKeyLoop
+	inc	e
+EraseCursor:
+	xor	a, a
+	call	PrintChar
+	ld	a, 10
+	call	_DelayTenTimesAms
+	jr	PrintCursor
+SelectEntry:
+Quit:
 	
 ; Restore palette, variables and registers
 	ld	de, mpLcdPalette
@@ -145,20 +184,29 @@ DebuggerCode2:
 	ret
 	
 ; Routines are starting here
+GetKeyFast:
+	ld	hl, mpKeyRange + (keyModeScanOnce << 8)
+	ld	(hl), h
+	xor	a, a
+_:	cp	a, (hl)
+	jr	nz, -_
+	ret
+	
 PrintString:
 	ld	a, (hl)
 	or	a, a
 	inc	hl
 	ret	z
 	call	PrintChar
+	inc	(iy + X_POS)
 	jr	PrintString
 	
 PrintChar:
 	push	hl
+	push	de
 	or	a, a
 	sbc	hl, hl
 	ld	l, (iy + X_POS)
-	inc	(iy + X_POS)
 	ld	e, (iy + Y_POS)
 	ld	d, lcdWidth / 8
 	mlt	de
@@ -181,6 +229,7 @@ PutCharLoop:
 	ex	de, hl
 	dec	a
 	jr	nz, PutCharLoop
+	pop	de
 	pop	hl
 	ret
 	
