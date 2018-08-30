@@ -120,12 +120,14 @@ PrintOptionsLoop:
 	ld	e, b
 	
 PrintCursor:
-	ld	l, e
-	ld	h, 9
-	mlt	hl
-	inc	l
-	ld	(iy + Y_POS), l
-	ld	(iy + X_POS), h
+	ld	a, e
+	add	a, a
+	add	a, a
+	add	a, a
+	add	a, e
+	inc	a
+	ld	(iy + Y_POS), a
+	ld	(iy + X_POS), 0
 	ld	a, '>'
 	call	PrintChar
 CheckKeyLoop:
@@ -167,8 +169,6 @@ SelectEntry:
 	dec	a
 	jp	z, JumpLabel
 Quit:
-	ld	a, 20
-	call	_DelayTenTimesAms
 	
 ; Restore palette, usb area, variables and registers
 	ld	de, mpLcdPalette
@@ -199,17 +199,18 @@ StepCode:
 ViewVariables:
 	ld	hl, (iy + DBG_PROG_START) 
 	xor	a, a
-	ld	bc, 0
 	cpir
 	ld	b, (hl)				; Amount of variables
 	ld	c, 0
 	inc	hl
 PrintVariableLoop:
-	ld	e, c
-	ld	d, 9
-	mlt	de
-	inc	e
-	ld	(iy + Y_POS), e
+	ld	a, c
+	add	a, a
+	add	a, a
+	add	a, a
+	add	a, c
+	inc	a
+	ld	(iy + Y_POS), a
 	ld	(iy + X_POS), 0
 	call	PrintString
 	ld	(iy + X_POS), 23
@@ -261,39 +262,20 @@ ClearScreen:
 	ld	bc, lcdWidth * lcdHeight / 8 - 1
 	ldir
 	ret
-
-GetKeyFast:
-	ld	hl, mpKeyRange + (keyModeScanOnce << 8)
-	ld	(hl), h
-	xor	a, a
-_:	cp	a, (hl)
-	jr	nz, -_
-	ret
 	
 GetKeyAnyFast:
-	call	GetKeyFast
-	ld	l, keyData + 2
-	ld	a, (hl)
-	inc	l
-	inc	l
-	or	a, (hl)
-	inc	l
-	inc	l
-	or	a, (hl)
-	inc	l
-	inc	l
-	or	a, (hl)
-	inc	l
-	inc	l
-	or	a, (hl)
-	inc	l
-	inc	l
-	or	a, (hl)
-	inc	l
-	inc	l
-	or	a, (hl)
-	jr	z, GetKeyAnyFast
-	ld	a, 20
+	ld	hl, mpKeyRange + (keyModeAny << 8)
+	ld	(hl), h
+	ld	l, keyIntStat
+	xor	a, a
+	ld	(hl), keyIntKeyPress
+_:	bit	bKeyIntKeyPress, (hl)
+	jr	z, -_
+	ld	l, a
+	ld	(hl), keyModeScanOnce
+_:	cp	a, (hl)
+	jr	nz, -_
+	ld	a, 10
 	jp	_DelayTenTimesAms
 	
 PrintString:
