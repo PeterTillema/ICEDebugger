@@ -24,13 +24,9 @@ start:
 	call	_Mov9ToOP1
 	call	_ChkFindSym			; Find program, must exists
 	jr	c, Return
-	ld	bc, 0
 	ex	de, hl				; Get size
-	ld	c, (hl)
 	inc	hl
-	ld	b, (hl)
 	inc	hl
-	ld	(iy + DBG_PROG_SIZE), bc	; Store size + pointers
 	ld	(iy + DBG_PROG_START), hl	; HL points to the source program now
 	dec	hl
 	call	_Mov9ToOP1
@@ -77,6 +73,7 @@ DebuggerCode2:
 	push	ix
 	
 	ld	iy, VARIABLES
+	ld	ix, 0D13F56h			; See ../main.h
 	ld	(iy + INPUT_LINE), de
 	di
 	ld	a, lcdBpp1
@@ -86,12 +83,6 @@ DebuggerCode2:
 	set	2, (hl)
 	ld	hl, SCREEN_START
 	ld	(mpLcdUpbase), hl
-	ld	(hl), 0
-	push	hl
-	pop	de
-	inc	de
-	ld	bc, lcdWidth * lcdHeight / 8 - 1
-	ldir
 	ld	hl, mpLcdPalette
 	lea	de, iy + PALETTE_ENTRIES_BACKUP
 	ld	c, 4
@@ -106,24 +97,27 @@ DebuggerCode2:
 	dec	hl
 	ld	(hl), c
 	
-; Main code
-	ld	(iy + X_POS), 1
-	ld	(iy + Y_POS), 1
+MainMenu:
+	call	ClearScreen
+	ld	c, 0
+	ld	b, 7
 	ld	hl, StepThroughCodeString
-	call	PrintString
+	
+PrintOptionsLoop:
+	push	bc
+	ld	a, c
+	add	a, a
+	add	a, a
+	add	a, a
+	add	a, c
+	inc	a
 	ld	(iy + X_POS), 1
-	ld	(iy + Y_POS), 10
+	ld	(iy + Y_POS), a
 	call	PrintString
-	ld	(iy + X_POS), 1
-	ld	(iy + Y_POS), 19
-	call	PrintString
-	ld	(iy + X_POS), 1
-	ld	(iy + Y_POS), 28
-	call	PrintString
-	ld	(iy + X_POS), 1
-	ld	(iy + Y_POS), 37
-	call	PrintString
-	ld	e, 0
+	pop	bc
+	inc	c
+	djnz	PrintOptionsLoop
+	ld	e, b
 	
 PrintCursor:
 	ld	l, e
@@ -135,7 +129,7 @@ PrintCursor:
 	ld	a, '>'
 	call	PrintChar
 CheckKeyLoop:
-	call	GetKeyFast
+	call	GetKeyAnyFast
 	ld	l, 01Ch
 	bit	0, (hl)
 	jr	nz, SelectEntry
@@ -154,23 +148,41 @@ MoveCursorUp:
 	jr	EraseCursor
 MoveCursorDown:
 	ld	a, e
-	cp	a, 4
+	cp	a, 6
 	jr	z, CheckKeyLoop
 	inc	e
 EraseCursor:
 	xor	a, a
 	call	PrintChar
-	ld	a, 10
-	call	_DelayTenTimesAms
 	jr	PrintCursor
 SelectEntry:
+	ld	a, e
+	call	ClearScreen
+	or	a, a
+	jr	z, StepCode
+	dec	a
+	jp	z, ViewVariables
+	dec	a
+	jp	z, ViewMemory
+	dec	a
+	jp	z, JumpLabel
 Quit:
+	ld	a, 20
+	call	_DelayTenTimesAms
 	
-; Restore palette, variables and registers
+; Restore palette, usb area, variables and registers
 	ld	de, mpLcdPalette
 	lea	hl, iy + PALETTE_ENTRIES_BACKUP
 	ld	bc, 4
 	ldir
+	ld	hl, usbArea
+	ld	(hl), 0
+	push	hl
+	pop	de
+	inc	de
+	ld	bc, 14305
+	ldir
+	
 	pop	ix
 	pop	hl
 	ld	(mpLcdUpbase), hl
@@ -183,7 +195,73 @@ Quit:
 	pop	af
 	ret
 	
+StepCode:
+ViewVariables:
+	ld	hl, (iy + DBG_PROG_START) 
+	xor	a, a
+	ld	bc, 0
+	cpir
+	ld	b, (hl)				; Amount of variables
+	ld	c, 0
+	inc	hl
+PrintVariableLoop:
+	ld	e, c
+	ld	d, 9
+	mlt	de
+	inc	e
+	ld	(iy + Y_POS), e
+	ld	(iy + X_POS), 0
+	call	PrintString
+	ld	(iy + X_POS), 23
+	push	hl
+	ld	a, c
+	add	a, a
+	add	a, c
+	sub	a, 080h
+	ld	(VariableOffset), a
+VariableOffset = $+2
+	ld	hl, (ix + 0)
+	call	ToString
+	call	PrintString
+	pop	hl
+	inc	c
+	djnz	PrintVariableLoop
+	call	GetKeyAnyFast
+	jp	MainMenu
+ViewMemory:
+JumpLabel:
+	jp	Quit
+	
 ; Routines are starting here
+ToString:
+	push	bc
+	ld	de, TempStringData + 8
+DivideLoop:
+	ld	a, 10
+	call	_DivHLByA
+	dec	de
+	add	hl, de
+	add	a, '0'
+	ld	(de), a
+	sbc	hl, de
+	jr	nz, DivideLoop
+	ex	de, hl
+	pop	bc
+	ret
+	
+TempStringData:
+	.db	0, 0, 0, 0, 0, 0, 0, 0, 0
+	
+ClearScreen:
+	ld	hl, SCREEN_START
+	ld	(hl), 0
+	push	hl
+	pop	de
+	inc	de
+	ld	bc, lcdWidth * lcdHeight / 8 - 1
+	ldir
+	ret
+
 GetKeyFast:
 	ld	hl, mpKeyRange + (keyModeScanOnce << 8)
 	ld	(hl), h
@@ -191,6 +269,32 @@ GetKeyFast:
 _:	cp	a, (hl)
 	jr	nz, -_
 	ret
+	
+GetKeyAnyFast:
+	call	GetKeyFast
+	ld	l, keyData + 2
+	ld	a, (hl)
+	inc	l
+	inc	l
+	or	a, (hl)
+	inc	l
+	inc	l
+	or	a, (hl)
+	inc	l
+	inc	l
+	or	a, (hl)
+	inc	l
+	inc	l
+	or	a, (hl)
+	inc	l
+	inc	l
+	or	a, (hl)
+	inc	l
+	inc	l
+	or	a, (hl)
+	jr	z, GetKeyAnyFast
+	ld	a, 20
+	jp	_DelayTenTimesAms
 	
 PrintString:
 	ld	a, (hl)
@@ -204,6 +308,7 @@ PrintString:
 PrintChar:
 	push	hl
 	push	de
+	push	bc
 	or	a, a
 	sbc	hl, hl
 	ld	l, (iy + X_POS)
@@ -229,6 +334,7 @@ PutCharLoop:
 	ex	de, hl
 	dec	a
 	jr	nz, PutCharLoop
+	pop	bc
 	pop	de
 	pop	hl
 	ret
@@ -239,6 +345,10 @@ VariableViewingString:
 	.db	"View/edit variables", 0
 MemoryViewingString:
 	.db	"View/edit memory", 0
+ViewScreenString:
+	.db	"View screen", 0
+ViewBufferString:
+	.db	"View buffer", 0
 JumpToLabelString:
 	.db	"Jump to label", 0
 QuitString:
