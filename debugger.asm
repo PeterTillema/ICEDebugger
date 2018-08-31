@@ -76,17 +76,10 @@ DebuggerCode2:
 	ld	iy, VARIABLES
 	ld	ix, 0D13F56h			; See src/main.h
 	ld	(iy + INPUT_LINE), de
-	di
-	ld	a, lcdBpp1
-	ld	hl, mpLcdCtrl
-	ld	(hl), a
-	inc	hl
-	set	2, (hl)
-	ld	hl, SCREEN_START
-	ld	(mpLcdUpbase), hl
+	
 	ld	hl, mpLcdPalette
 	lea	de, iy + PALETTE_ENTRIES_BACKUP
-	ld	c, 4
+	ld	bc, 4
 	ldir
 	dec	c
 	dec	hl
@@ -98,10 +91,19 @@ DebuggerCode2:
 	dec	hl
 	ld	(hl), c
 	
+MainMenuSetLCDConfig:
+	ld	a, lcdBpp1
+	ld	hl, mpLcdCtrl
+	ld	(hl), a
+	inc	hl
+	set	2, (hl)
+	ld	hl, SCREEN_START
+	ld	(mpLcdUpbase), hl
+	
 MainMenu:
 	call	ClearScreen
 	ld	c, 0
-	ld	b, 7
+	ld	b, 8
 	ld	d, b
 	ld	hl, StepThroughCodeString
 	
@@ -131,6 +133,8 @@ SelectEntry:
 	jp	z, ViewVariables
 	dec	a
 	jp	z, ViewMemory
+	dec	a
+	jp	z, ViewSlots
 	dec	a
 	jp	z, ViewScreen
 	dec	a
@@ -208,10 +212,31 @@ NoVariablesFound1:
 ViewMemory:
 	jp	Quit
 	
+ViewSlots:
+	jp	Quit
+	
 ViewScreen:
+	ld	hl, 6
+	add	hl, sp
+	ld	de, (hl)
+	ld	(mpLcdCtrl), de
+	dec	hl
+	dec	hl
+	dec	hl
+	ld	hl, (hl)
+	ld	(mpLcdUpBase), hl
+	call	GetKeyAnyFast
+	jp	MainMenuSetLCDConfig
 
 ViewBuffer:
-	jp	Quit
+	ld	hl, 6
+	add	hl, sp
+	ld	hl, (hl)
+	ld	(mpLcdCtrl), hl
+	ld	hl, (mpLcdLpBase)
+	ld	(mpLcdUpBase), hl
+	call	GetKeyAnyFast
+	jp	MainMenuSetLCDConfig
 	
 JumpLabel:
 	ld	hl, (iy + DBG_PROG_START)
@@ -428,6 +453,8 @@ VariableViewingString:
 	.db	"View/edit variables", 0
 MemoryViewingString:
 	.db	"View/edit memory", 0
+ViewOpenedSlotsString:
+	.db	"View opened slots", 0
 ViewScreenString:
 	.db	"View screen", 0
 ViewBufferString:
