@@ -9,6 +9,7 @@
 #define INPUT_LINE             16
 #define X_POS                  19
 #define Y_POS                  20
+#define TEMP                   21
 
 #define SCREEN_START (usbArea & 0FFFFF8h) + 8	; Note: mask to 8 bytes!
 
@@ -18,7 +19,7 @@ start:
 	ret
 	
 ; Here we actually start; the ICE program can check for these 3 bytes to make sure the debugger is loaded
-; DE = compiled program name, store it
+; DE = compiled program name
 	ld	iy, VARIABLES
 	ex	de, hl				; Input is DBG file
 	call	_Mov9ToOP1
@@ -42,20 +43,20 @@ start:
 	inc	hl
 	ld	(iy + PROG_SIZE), bc		; Store pointers
 	ld	(iy + PROG_START), hl
-Return:
-	sbc	hl, hl
-	inc	hl
 	ld	iy, flags
-	ld	hl, (windowHookPtr)
+	ld	hl, (windowHookPtr)		; Copy to safeRAM
 	ld	de, DebuggerCode1
 	add	hl, de
 	ld	de, DebuggerCode2
 	ld	bc, DebuggerCodeEnd - DebuggerCode2
 	ldir
+Return:
+	sbc	hl, hl
+	inc	hl
 	ret
 
 DebuggerCode1:
-.org saveSScreen + 21945 - 260 - 2000
+.org saveSScreen + 21945 - 260 - 2000		; See src/main.h
 DebuggerCode2:
 ; Backup registers and variables
 ; DE = current line in input program
@@ -73,7 +74,7 @@ DebuggerCode2:
 	push	ix
 	
 	ld	iy, VARIABLES
-	ld	ix, 0D13F56h			; See ../main.h
+	ld	ix, 0D13F56h			; See src/main.h
 	ld	(iy + INPUT_LINE), de
 	di
 	ld	a, lcdBpp1
@@ -101,6 +102,7 @@ MainMenu:
 	call	ClearScreen
 	ld	c, 0
 	ld	b, 7
+	ld	d, b
 	ld	hl, StepThroughCodeString
 	
 PrintOptionsLoop:
@@ -117,46 +119,9 @@ PrintOptionsLoop:
 	pop	bc
 	inc	c
 	djnz	PrintOptionsLoop
-	ld	e, b
-	
-PrintCursor:
-	ld	a, e
-	add	a, a
-	add	a, a
-	add	a, a
-	add	a, e
-	inc	a
-	ld	(iy + Y_POS), a
-	ld	(iy + X_POS), 0
-	ld	a, '>'
-	call	PrintChar
-CheckKeyLoop:
-	call	GetKeyAnyFast
-	ld	l, 01Ch
-	bit	0, (hl)
-	jr	nz, SelectEntry
-	bit	6, (hl)
-	jr	nz, Quit
-	ld	l, 01Eh
-	bit	0, (hl)
-	jr	nz, MoveCursorDown
-	bit	3, (hl)
-	jr	z, CheckKeyLoop
-MoveCursorUp:
-	ld	a, e
-	or	a, a
-	jr	z, CheckKeyLoop
-	dec	e
-	jr	EraseCursor
-MoveCursorDown:
-	ld	a, e
-	cp	a, 6
-	jr	z, CheckKeyLoop
-	inc	e
-EraseCursor:
-	xor	a, a
-	call	PrintChar
-	jr	PrintCursor
+	call	SelectOption
+	jr	z, Quit
+
 SelectEntry:
 	ld	a, e
 	call	ClearScreen
@@ -167,9 +132,13 @@ SelectEntry:
 	dec	a
 	jp	z, ViewMemory
 	dec	a
+	jp	z, ViewScreen
+	dec	a
+	jp	z, ViewBuffer
+	dec	a
 	jp	z, JumpLabel
-Quit:
 	
+Quit:
 ; Restore palette, usb area, variables and registers
 	ld	de, mpLcdPalette
 	lea	hl, iy + PALETTE_ENTRIES_BACKUP
@@ -196,13 +165,18 @@ Quit:
 	ret
 	
 StepCode:
+	jp	Quit
+	
 ViewVariables:
 	ld	hl, (iy + DBG_PROG_START) 
 	xor	a, a
 	cpir
 	ld	b, (hl)				; Amount of variables
-	ld	c, 0
 	inc	hl
+	inc	b
+	dec	b
+	jr	z, NoVariablesFound1
+	ld	c, 0
 PrintVariableLoop:
 	ld	a, c
 	add	a, a
@@ -227,13 +201,140 @@ VariableOffset = $+2
 	pop	hl
 	inc	c
 	djnz	PrintVariableLoop
+NoVariablesFound1:
 	call	GetKeyAnyFast
 	jp	MainMenu
+	
 ViewMemory:
-JumpLabel:
 	jp	Quit
 	
+ViewScreen:
+
+ViewBuffer:
+	jp	Quit
+	
+JumpLabel:
+	ld	hl, (iy + DBG_PROG_START)
+	xor	a, a
+	cpir
+	ld	b, (hl)				; Amount of variables
+	inc	hl
+	inc	b
+	dec	b
+	jr	z, NoVariablesFound2
+SkipVariableLoop:
+	ld	c, 255				; Prevent decrementing B; a variable name won't be longer than 255 bytes
+	cpir
+	djnz	SkipVariableLoop
+NoVariablesFound2:
+	ld	de, (hl)			; Amount of lines
+	inc	hl
+	inc	hl
+	inc	hl
+	add	hl, de				; Skip line lengths
+	add	hl, de
+	inc	hl				; Skip ending byte $FF
+	ld	b, (hl)				; Amount of labels
+	ld	d, b				; Amount of labels
+	inc	hl
+	ld	(iy + TEMP), hl			; Save pointer to recall later
+	inc	b
+	dec	b
+	jr	z, NoLabelsFound
+	ld	c, 0
+GetLabelsLoop:
+	ld	a, c
+	add	a, a
+	add	a, a
+	add	a, a
+	add	a, c
+	inc	a
+	ld	(iy + Y_POS), a
+	ld	(iy + X_POS), 1
+	call	PrintString
+	inc	hl				; Skip label address
+	inc	hl
+	inc	hl
+	inc	c
+	djnz	GetLabelsLoop
+	call	SelectOption
+	jp	z, MainMenu
+	ld	hl, (iy + TEMP)
+	xor	a, a
+	ld	c, a
+	ld	b, a
+	inc	e
+	dec	e
+	jr	z, GetLabelAddress
+SkipLabelsLoop:
+	cpir
+	inc	hl
+	inc	hl
+	inc	hl
+	dec	e
+	jr	nz, SkipLabelsLoop
+GetLabelAddress:
+	cpir
+	ld	de, (hl)
+	ld	hl, 24				; 8 pushes/calls before return
+	add	hl, sp
+	ld	(hl), de
+	jp	Quit
+NoLabelsFound:
+	call	GetKeyAnyFast
+	jp	MainMenu
+	
+; ==============================================================
 ; Routines are starting here
+; ==============================================================
+
+SelectOption:
+; D = max amount of options
+; E = selected option
+	dec	d
+	ld	e, 0
+PrintCursor:
+	ld	a, e
+	add	a, a
+	add	a, a
+	add	a, a
+	add	a, e
+	inc	a
+	ld	(iy + Y_POS), a
+	ld	(iy + X_POS), 0
+	ld	a, '>'
+	call	PrintChar
+CheckKeyLoop:
+	call	GetKeyAnyFast
+	ld	l, 01Ch
+	bit	0, (hl)
+	ret	nz
+	bit	6, (hl)
+	jr	nz, ReturnZ
+	ld	l, 01Eh
+	bit	0, (hl)
+	jr	nz, MoveCursorDown
+	bit	3, (hl)
+	jr	z, CheckKeyLoop
+MoveCursorUp:
+	ld	a, e
+	or	a, a
+	jr	z, CheckKeyLoop
+	dec	e
+	jr	EraseCursor
+MoveCursorDown:
+	ld	a, e
+	cp	a, d
+	jr	z, CheckKeyLoop
+	inc	e
+EraseCursor:
+	xor	a, a
+	call	PrintChar
+	jr	PrintCursor
+ReturnZ:
+	cp	a, a
+	ret
+	
 ToString:
 	push	bc
 	ld	de, TempStringData + 8
@@ -275,7 +376,7 @@ _:	bit	bKeyIntKeyPress, (hl)
 	ld	(hl), keyModeScanOnce
 _:	cp	a, (hl)
 	jr	nz, -_
-	ld	a, 10
+	ld	a, 20
 	jp	_DelayTenTimesAms
 	
 PrintString:
