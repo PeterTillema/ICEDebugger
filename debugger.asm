@@ -56,7 +56,7 @@ Return:
 	ret
 
 DebuggerCode1:
-.org saveSScreen + 21945 - 260 - 2000		; See src/main.h
+.org saveSScreen + 21945 - 260 - 4000		; See src/main.h
 DebuggerCode2:
 ; Backup registers and variables
 ; DE = current line in input program
@@ -175,6 +175,9 @@ ViewVariables:
 	ld	hl, (iy + DBG_PROG_START) 
 	xor	a, a
 	cpir
+	inc	hl				; Skip FILEIOC functions pointer
+	inc	hl
+	inc	hl
 	ld	b, (hl)				; Amount of variables
 	inc	hl
 	inc	b
@@ -213,7 +216,139 @@ ViewMemory:
 	jp	Quit
 	
 ViewSlots:
-	jp	Quit
+	ld	hl, (iy + DBG_PROG_START)
+	xor	a, a
+	cpir
+	ld	hl, (hl)			; Pointer to FILEIOC functions
+	add	hl, de
+	or	a, a
+	sbc	hl, de
+	jp	z, AllSlotsClosed
+	inc	hl
+	ld	de, (hl)			; IsArchived
+	ld	(IsArchived_SMC), de
+	inc	hl
+	inc	hl
+	inc	hl
+	inc	hl
+	ld	de, (hl)			; Tell
+	ld	(Tell_SMC), de
+	inc	hl
+	inc	hl
+	inc	hl
+	inc	hl
+	ld	de, (hl)			; GetSize
+	ld	(GetSize_SMC), de
+	inc	hl
+	inc	hl
+	inc	hl
+	inc	hl
+	ld	de, (hl)			; GetDataPtr
+	ld	(GetDataPtr_SMC), de
+	inc	hl
+	inc	hl
+	inc	hl
+	inc	hl
+	ld	de, (hl)			; GetVATPtr
+	ld	(GetVATPtr_SMC), de
+	inc	hl
+	inc	hl
+	inc	hl
+	inc	hl
+	ld	de, (hl)			; GetName
+	ld	(GetName_SMC), de
+	
+	ld	(iy + X_POS), 0
+	ld	(iy + Y_POS), 0
+	ld	hl, SlotOptionsString
+	call	PrintString
+	ld	b, 5
+	ld	c, 1
+GetSlotLoop:
+	push	bc
+	ld	a, c
+	add	a, a
+	add	a, a
+	add	a, a
+	add	a, c
+	inc	a
+	ld	(iy + Y_POS), a
+	ld	(iy + X_POS), 0
+	ld	a, c
+	add	a, '0'
+	call	PrintChar
+	ld	a, ':'
+	call	PrintChar
+	ld	(iy + X_POS), 28
+GetSize_SMC = $+1
+	call	0
+	inc	hl
+	add	hl, de
+	or	a, a
+	sbc	hl, de
+	jr	z, SlotIsClosed
+	dec	hl
+	call	ToString
+	call	PrintString
+	ld	(iy + X_POS), 5
+GetVATPtr_SMC = $+1
+	call	0
+	ld	a, (hl)
+	or	a, a
+	sbc	hl, hl
+	ld	l, a
+	call	ToString
+	call	PrintString
+	ld	(iy + X_POS), 10
+IsArchived_SMC = $+1
+	call	0
+	ld	a, l
+	or	a, a
+	jr	z, InRAM
+	ld	a, '*'
+	call	PrintChar
+InRAM:
+	ld	hl, TempStringData
+	push	hl
+GetName_SMC = $+1
+	call	0
+	pop	hl
+	call	PrintString
+	ld	(iy + X_POS), 20
+	ld	a, '$'
+	call	PrintChar
+GetDataPtr_SMC = $+1
+	call	0
+	ld	b, 6
+GetHexadecimalFromAddressLoop:
+	xor	a, a
+	add	hl, hl
+	adc	a, a
+	add	hl, hl
+	adc	a, a
+	add	hl, hl
+	adc	a, a
+	add	hl, hl
+	adc	a, a
+	cp	a, 10
+	jr	c, +_
+	add	a, 'A' - '9' - 1
+_:	add	a, '0'
+	call	PrintChar
+	djnz	GetHexadecimalFromAddressLoop
+	ld	(iy + X_POS), 34
+Tell_SMC = $+1
+	call	0
+	call	ToString
+	call	PrintString
+SlotIsClosed:
+	pop	bc
+	inc	c
+	dec	b
+	jp	nz, GetSlotLoop
+AllSlotsClosed:
+	call	GetKeyAnyFast
+	jp	MainMenu
 	
 ViewScreen:
 	ld	hl, 6
@@ -242,6 +377,9 @@ JumpLabel:
 	ld	hl, (iy + DBG_PROG_START)
 	xor	a, a
 	cpir
+	inc	hl				; Skip FILEIOC functions pointer
+	inc	hl
+	inc	hl
 	ld	b, (hl)				; Amount of variables
 	inc	hl
 	inc	b
@@ -329,6 +467,7 @@ PrintCursor:
 	ld	(iy + X_POS), 0
 	ld	a, '>'
 	call	PrintChar
+	dec	(iy + X_POS)
 CheckKeyLoop:
 	call	GetKeyAnyFast
 	ld	l, 01Ch
@@ -410,7 +549,6 @@ PrintString:
 	inc	hl
 	ret	z
 	call	PrintChar
-	inc	(iy + X_POS)
 	jr	PrintString
 	
 PrintChar:
@@ -420,6 +558,7 @@ PrintChar:
 	or	a, a
 	sbc	hl, hl
 	ld	l, (iy + X_POS)
+	inc	(iy + X_POS)
 	ld	e, (iy + Y_POS)
 	ld	d, lcdWidth / 8
 	mlt	de
@@ -463,6 +602,9 @@ JumpToLabelString:
 	.db	"Jump to label", 0
 QuitString:
 	.db	"Quit", 0
+	
+SlotOptionsString:
+	.db	"Slot Type Name      DataPtr Size  Offset", 0
 
 _DefaultTextData:
 	.db	$00,$00,$00,$00,$00,$00,$00,$00 ; .
