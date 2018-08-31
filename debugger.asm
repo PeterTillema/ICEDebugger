@@ -1,6 +1,6 @@
 #include "ti84pce.inc"
 
-#define VARIABLES cursorImage
+#define VARIABLES cursorImage + 500		; Apparently the GRAPHX lib uses cursorImage to fill the screen
 #define PROG_SIZE              0
 #define PROG_START             3
 #define DBG_PROG_SIZE          6
@@ -25,7 +25,7 @@ start:
 	call	_Mov9ToOP1
 	call	_ChkFindSym			; Find program, must exists
 	jr	c, Return
-	ex	de, hl				; Get size
+	ex	de, hl
 	inc	hl
 	inc	hl
 	ld	(iy + DBG_PROG_START), hl	; HL points to the source program now
