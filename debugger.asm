@@ -1,5 +1,7 @@
 #include "ti84pce.inc"
 
+
+
 #define VARIABLES cursorImage + 500		; Apparently the GRAPHX lib uses cursorImage to fill the screen
 #define PROG_SIZE              0
 #define PROG_START             3
@@ -12,6 +14,7 @@
 #define TEMP                   21
 
 #define SCREEN_START (usbArea & 0FFFFF8h) + 8	; Note: mask to 8 bytes!
+#define AMOUNT_OF_OPTIONS      9
 
 start:
 	.db	083h
@@ -35,9 +38,16 @@ start:
 	ld	(OP1), a
 	call	_ChkFindSym			; Find debug program, must exists
 	jr	c, Return
+	call	_ChkInRAM
+	ex	de, hl
 	ld	bc, 0
-	ex	de, hl				; Get size
+	jr	nc, +_
+	ld	c, 9
+	add	hl, bc
 	ld	c, (hl)
+	add	hl, bc
+	inc	hl
+_:	ld	c, (hl)				; Get size
 	inc	hl
 	ld	b, (hl)
 	inc	hl
@@ -59,7 +69,6 @@ DebuggerCode1:
 .org saveSScreen + 21945 - 260 - 4000		; See src/main.h
 DebuggerCode2:
 ; Backup registers and variables
-; DE = current line in input program
 
 	di
 	push	af
@@ -75,7 +84,6 @@ DebuggerCode2:
 	
 	ld	iy, VARIABLES
 	ld	ix, 0D13F56h			; See src/main.h
-	ld	(iy + INPUT_LINE), de
 	
 	ld	hl, mpLcdPalette
 	lea	de, iy + PALETTE_ENTRIES_BACKUP
@@ -103,7 +111,7 @@ MainMenuSetLCDConfig:
 MainMenu:
 	call	ClearScreen
 	ld	c, 0
-	ld	b, 8
+	ld	b, AMOUNT_OF_OPTIONS
 	ld	d, b
 	ld	hl, StepThroughCodeString
 	
@@ -140,6 +148,8 @@ SelectEntry:
 	dec	a
 	jp	z, ViewBuffer
 	dec	a
+	jp	z, Breakpoints
+	dec	a
 	jp	z, JumpLabel
 	
 Quit:
@@ -169,7 +179,47 @@ Quit:
 	ret
 	
 StepCode:
-	jp	Quit
+	ld	(iy + X_POS), 1
+	ld	(iy + Y_POS), 1
+	ld	hl, (iy + PROG_START)
+	ld	bc, (iy + PROG_SIZE)
+GetBASICTokenLoop:
+	ld	a, b
+	or	a, c
+	jr	z, BASICProgramDone
+	ld	a, (iy + X_POS)
+	cp	a, 40
+	jr	z, DontDisplayToken
+	ld	a, (hl)
+	cp	a, tEnter
+	jr	z, AdvanceLine
+	push	bc
+	push	hl
+	call	_Get_Tok_Strng
+	ld	hl, OP3
+	call	PrintString
+	pop	hl
+	pop	bc
+DontDisplayToken:
+	ld	a, (hl)
+	call	_IsA2ByteTok
+	inc	hl
+	dec	bc
+	jr	nz, +_
+	inc	hl
+	dec	bc
+_:	jr	GetBASICTokenLoop
+AdvanceLine:
+	ld	(iy + X_POS), 1
+	ld	a, (iy + Y_POS)
+	add	a, 9
+	ld	(iy + Y_POS), a
+	inc	hl
+	dec	bc
+	jr	GetBASICTokenLoop
+BASICProgramDone:
+	call	GetKeyAnyFast
+	jp	MainMenu
 	
 ViewVariables:
 	ld	hl, (iy + DBG_PROG_START) 
@@ -224,37 +274,23 @@ ViewSlots:
 	or	a, a
 	sbc	hl, de
 	jp	z, AllSlotsClosed
+	ld	bc, 4
 	inc	hl
 	ld	de, (hl)			; IsArchived
 	ld	(IsArchived_SMC), de
-	inc	hl
-	inc	hl
-	inc	hl
-	inc	hl
+	add	hl, bc
 	ld	de, (hl)			; Tell
 	ld	(Tell_SMC), de
-	inc	hl
-	inc	hl
-	inc	hl
-	inc	hl
+	add	hl, bc
 	ld	de, (hl)			; GetSize
 	ld	(GetSize_SMC), de
-	inc	hl
-	inc	hl
-	inc	hl
-	inc	hl
+	add	hl, bc
 	ld	de, (hl)			; GetDataPtr
 	ld	(GetDataPtr_SMC), de
-	inc	hl
-	inc	hl
-	inc	hl
-	inc	hl
+	add	hl, bc
 	ld	de, (hl)			; GetVATPtr
 	ld	(GetVATPtr_SMC), de
-	inc	hl
-	inc	hl
-	inc	hl
-	inc	hl
+	add	hl, bc
 	ld	de, (hl)			; GetName
 	ld	(GetName_SMC), de
 	
@@ -319,23 +355,12 @@ GetName_SMC = $+1
 	call	PrintChar
 GetDataPtr_SMC = $+1
 	call	0
-	ld	b, 6
-GetHexadecimalFromAddressLoop:
-	xor	a, a
-	add	hl, hl
-	adc	a, a
-	add	hl, hl
-	adc	a, a
-	add	hl, hl
-	adc	a, a
-	add	hl, hl
-	adc	a, a
-	cp	a, 10
-	jr	c, +_
-	add	a, 'A' - '9' - 1
-_:	add	a, '0'
-	call	PrintChar
-	djnz	GetHexadecimalFromAddressLoop
+	call	_SetAToHLU
+	call	PrintByte
+	ld	a, h
+	call	PrintByte
+	ld	a, l
+	call	PrintByte
 	ld	(iy + X_POS), 34
 Tell_SMC = $+1
 	call	0
@@ -372,6 +397,8 @@ ViewBuffer:
 	ld	(mpLcdUpBase), hl
 	call	GetKeyAnyFast
 	jp	MainMenuSetLCDConfig
+	
+Breakpoints:
 	
 JumpLabel:
 	ld	hl, (iy + DBG_PROG_START)
@@ -499,6 +526,26 @@ ReturnZ:
 	cp	a, a
 	ret
 	
+PrintByte:
+	ld	b, a
+	rra
+	rra
+	rra
+	rra
+	and	a, 00Fh
+	cp	a, 10
+	jr	c, +_
+	add	a, 'A' - '9' - 1
+_:	add	a, '0'
+	call	PrintChar
+	ld	a, b
+	and	a, 00Fh
+	cp	a, 10
+	jr	c, +_
+	add	a, 'A' - '9' - 1
+_:	add	a, '0'
+	jp	PrintChar
+	
 ToString:
 	push	bc
 	ld	de, TempStringData + 8
@@ -555,9 +602,13 @@ PrintChar:
 	push	hl
 	push	de
 	push	bc
+	ld	c, a
+	ld	a, (iy + X_POS)
+	cp	a, 40
+	jr	z, DontDisplayChar
 	or	a, a
 	sbc	hl, hl
-	ld	l, (iy + X_POS)
+	ld	l, a
 	inc	(iy + X_POS)
 	ld	e, (iy + Y_POS)
 	ld	d, lcdWidth / 8
@@ -567,7 +618,6 @@ PrintChar:
 	add	hl, de
 	ex	de, hl
 	ld	hl, _DefaultTextData
-	ld	c, a
 	ld	b, 8
 	ld	a, b
 	mlt	bc
@@ -581,6 +631,7 @@ PutCharLoop:
 	ex	de, hl
 	dec	a
 	jr	nz, PutCharLoop
+DontDisplayChar:
 	pop	bc
 	pop	de
 	pop	hl
@@ -598,6 +649,8 @@ ViewScreenString:
 	.db	"View screen", 0
 ViewBufferString:
 	.db	"View buffer", 0
+BreakpointsString:
+	.db	"Add/remove breakpoints", 0
 JumpToLabelString:
 	.db	"Jump to label", 0
 QuitString:
@@ -607,134 +660,9 @@ SlotOptionsString:
 	.db	"Slot Type Name      DataPtr Size  Offset", 0
 
 _DefaultTextData:
-	.db	$00,$00,$00,$00,$00,$00,$00,$00 ; .
-	.db	$7E,$81,$A5,$81,$BD,$BD,$81,$7E ; .
-	.db	$7E,$FF,$DB,$FF,$C3,$C3,$FF,$7E ; .
-	.db	$6C,$FE,$FE,$FE,$7C,$38,$10,$00 ; .
-	.db	$10,$38,$7C,$FE,$7C,$38,$10,$00 ; .
-	.db	$38,$7C,$38,$FE,$FE,$10,$10,$7C ; .
-	.db	$00,$18,$3C,$7E,$FF,$7E,$18,$7E ; .
-	.db	$00,$00,$18,$3C,$3C,$18,$00,$00 ; .
-	.db	$FF,$FF,$E7,$C3,$C3,$E7,$FF,$FF ; .
-	.db	$00,$3C,$66,$42,$42,$66,$3C,$00 ; .
-	.db	$FF,$C3,$99,$BD,$BD,$99,$C3,$FF ; .
-	.db	$0F,$07,$0F,$7D,$CC,$CC,$CC,$78 ; .
-	.db	$3C,$66,$66,$66,$3C,$18,$7E,$18 ; .
-	.db	$3F,$33,$3F,$30,$30,$70,$F0,$E0 ; .
-	.db	$7F,$63,$7F,$63,$63,$67,$E6,$C0 ; .
-	.db	$99,$5A,$3C,$E7,$E7,$3C,$5A,$99 ; .
-	.db	$80,$E0,$F8,$FE,$F8,$E0,$80,$00 ; .
-	.db	$02,$0E,$3E,$FE,$3E,$0E,$02,$00 ; .
-	.db	$18,$3C,$7E,$18,$18,$7E,$3C,$18 ; .
-	.db	$66,$66,$66,$66,$66,$00,$66,$00 ; .
-	.db	$7F,$DB,$DB,$7B,$1B,$1B,$1B,$00 ; .
-	.db	$3F,$60,$7C,$66,$66,$3E,$06,$FC ; .
-	.db	$00,$00,$00,$00,$7E,$7E,$7E,$00 ; .
-	.db	$18,$3C,$7E,$18,$7E,$3C,$18,$FF ; .
-	.db	$18,$3C,$7E,$18,$18,$18,$18,$00 ; .
-	.db	$18,$18,$18,$18,$7E,$3C,$18,$00 ; .
-	.db	$00,$18,$0C,$FE,$0C,$18,$00,$00 ; .
-	.db	$00,$30,$60,$FE,$60,$30,$00,$00 ; .
-	.db	$00,$00,$C0,$C0,$C0,$FE,$00,$00 ; .
-	.db	$00,$24,$66,$FF,$66,$24,$00,$00 ; .
-	.db	$00,$18,$3C,$7E,$FF,$FF,$00,$00 ; .
-	.db	$00,$FF,$FF,$7E,$3C,$18,$00,$00 ; .
-	.db	$00,$00,$00,$00,$00,$00,$00,$00 ;
-	.db	$C0,$C0,$C0,$C0,$C0,$00,$C0,$00 ; !
-	.db	$D8,$D8,$D8,$00,$00,$00,$00,$00 ; "
-	.db	$6C,$6C,$FE,$6C,$FE,$6C,$6C,$00 ; #
-	.db	$18,$7E,$C0,$7C,$06,$FC,$18,$00 ; $
-	.db	$00,$C6,$CC,$18,$30,$66,$C6,$00 ; %
-	.db	$38,$6C,$38,$76,$DC,$CC,$76,$00 ; &
-	.db	$30,$30,$60,$00,$00,$00,$00,$00 ; '
-	.db	$30,$60,$C0,$C0,$C0,$60,$30,$00 ; (
-	.db	$C0,$60,$30,$30,$30,$60,$C0,$00 ; )
-	.db	$00,$66,$3C,$FF,$3C,$66,$00,$00 ; *
-	.db	$00,$30,$30,$FC,$FC,$30,$30,$00 ; +
-	.db	$00,$00,$00,$00,$00,$60,$60,$C0 ; ,
-	.db	$00,$00,$00,$FC,$00,$00,$00,$00 ; -
-	.db	$00,$00,$00,$00,$00,$C0,$C0,$00 ; .
-	.db	$06,$0C,$18,$30,$60,$C0,$80,$00 ; /
-	.db	$7C,$CE,$DE,$F6,$E6,$C6,$7C,$00 ; 0
-	.db	$30,$70,$30,$30,$30,$30,$FC,$00 ; 1
-	.db	$7C,$C6,$06,$7C,$C0,$C0,$FE,$00 ; 2
-	.db	$FC,$06,$06,$3C,$06,$06,$FC,$00 ; 3
-	.db	$0C,$CC,$CC,$CC,$FE,$0C,$0C,$00 ; 4
-	.db	$FE,$C0,$FC,$06,$06,$C6,$7C,$00 ; 5
-	.db	$7C,$C0,$C0,$FC,$C6,$C6,$7C,$00 ; 6
-	.db	$FE,$06,$06,$0C,$18,$30,$30,$00 ; 7
-	.db	$7C,$C6,$C6,$7C,$C6,$C6,$7C,$00 ; 8
-	.db	$7C,$C6,$C6,$7E,$06,$06,$7C,$00 ; 9
-	.db	$00,$C0,$C0,$00,$00,$C0,$C0,$00 ; :
-	.db	$00,$60,$60,$00,$00,$60,$60,$C0 ; ;
-	.db	$18,$30,$60,$C0,$60,$30,$18,$00 ; <
-	.db	$00,$00,$FC,$00,$FC,$00,$00,$00 ; =
-	.db	$C0,$60,$30,$18,$30,$60,$C0,$00 ; >
-	.db	$78,$CC,$18,$30,$30,$00,$30,$00 ; ?
-	.db	$7C,$C6,$DE,$DE,$DE,$C0,$7E,$00 ; @
-	.db	$38,$6C,$C6,$C6,$FE,$C6,$C6,$00 ; A
-	.db	$FC,$C6,$C6,$FC,$C6,$C6,$FC,$00 ; B
-	.db	$7C,$C6,$C0,$C0,$C0,$C6,$7C,$00 ; C
-	.db	$F8,$CC,$C6,$C6,$C6,$CC,$F8,$00 ; D
-	.db	$FE,$C0,$C0,$F8,$C0,$C0,$FE,$00 ; E
-	.db	$FE,$C0,$C0,$F8,$C0,$C0,$C0,$00 ; F
-	.db	$7C,$C6,$C0,$C0,$CE,$C6,$7C,$00 ; G
-	.db	$C6,$C6,$C6,$FE,$C6,$C6,$C6,$00 ; H
-	.db	$7E,$18,$18,$18,$18,$18,$7E,$00 ; I
-	.db	$06,$06,$06,$06,$06,$C6,$7C,$00 ; J
-	.db	$C6,$CC,$D8,$F0,$D8,$CC,$C6,$00 ; K
-	.db	$C0,$C0,$C0,$C0,$C0,$C0,$FE,$00 ; L
-	.db	$C6,$EE,$FE,$FE,$D6,$C6,$C6,$00 ; M
-	.db	$C6,$E6,$F6,$DE,$CE,$C6,$C6,$00 ; N
-	.db	$7C,$C6,$C6,$C6,$C6,$C6,$7C,$00 ; O
-	.db	$FC,$C6,$C6,$FC,$C0,$C0,$C0,$00 ; P
-	.db	$7C,$C6,$C6,$C6,$D6,$DE,$7C,$06 ; Q
-	.db	$FC,$C6,$C6,$FC,$D8,$CC,$C6,$00 ; R
-	.db	$7C,$C6,$C0,$7C,$06,$C6,$7C,$00 ; S
-	.db	$FF,$18,$18,$18,$18,$18,$18,$00 ; T
-	.db	$C6,$C6,$C6,$C6,$C6,$C6,$FE,$00 ; U
-	.db	$C6,$C6,$C6,$C6,$C6,$7C,$38,$00 ; V
-	.db	$C6,$C6,$C6,$C6,$D6,$FE,$6C,$00 ; W
-	.db	$C6,$C6,$6C,$38,$6C,$C6,$C6,$00 ; X
-	.db	$C6,$C6,$C6,$7C,$18,$30,$E0,$00 ; Y
-	.db	$FE,$06,$0C,$18,$30,$60,$FE,$00 ; Z
-	.db	$F0,$C0,$C0,$C0,$C0,$C0,$F0,$00 ; [
-	.db	$C0,$60,$30,$18,$0C,$06,$02,$00 ; \
-	.db	$F0,$30,$30,$30,$30,$30,$F0,$00 ; ]
-	.db	$10,$38,$6C,$C6,$00,$00,$00,$00 ; ^
-	.db	$00,$00,$00,$00,$00,$00,$00,$FF ; _
-	.db	$C0,$C0,$60,$00,$00,$00,$00,$00 ; `
-	.db	$00,$00,$7C,$06,$7E,$C6,$7E,$00 ; a
-	.db	$C0,$C0,$C0,$FC,$C6,$C6,$FC,$00 ; b
-	.db	$00,$00,$7C,$C6,$C0,$C6,$7C,$00 ; c
-	.db	$06,$06,$06,$7E,$C6,$C6,$7E,$00 ; d
-	.db	$00,$00,$7C,$C6,$FE,$C0,$7C,$00 ; e
-	.db	$1C,$36,$30,$78,$30,$30,$78,$00 ; f
-	.db	$00,$00,$7E,$C6,$C6,$7E,$06,$FC ; g
-	.db	$C0,$C0,$FC,$C6,$C6,$C6,$C6,$00 ; h
-	.db	$60,$00,$E0,$60,$60,$60,$F0,$00 ; i
-	.db	$06,$00,$06,$06,$06,$06,$C6,$7C ; j
-	.db	$C0,$C0,$CC,$D8,$F8,$CC,$C6,$00 ; k
-	.db	$E0,$60,$60,$60,$60,$60,$F0,$00 ; l
-	.db	$00,$00,$CC,$FE,$FE,$D6,$D6,$00 ; m
-	.db	$00,$00,$FC,$C6,$C6,$C6,$C6,$00 ; n
-	.db	$00,$00,$7C,$C6,$C6,$C6,$7C,$00 ; o
-	.db	$00,$00,$FC,$C6,$C6,$FC,$C0,$C0 ; p
-	.db	$00,$00,$7E,$C6,$C6,$7E,$06,$06 ; q
-	.db	$00,$00,$FC,$C6,$C0,$C0,$C0,$00 ; r
-	.db	$00,$00,$7E,$C0,$7C,$06,$FC,$00 ; s
-	.db	$30,$30,$FC,$30,$30,$30,$1C,$00 ; t
-	.db	$00,$00,$C6,$C6,$C6,$C6,$7E,$00 ; u
-	.db	$00,$00,$C6,$C6,$C6,$7C,$38,$00 ; v
-	.db	$00,$00,$C6,$C6,$D6,$FE,$6C,$00 ; w
-	.db	$00,$00,$C6,$6C,$38,$6C,$C6,$00 ; x
-	.db	$00,$00,$C6,$C6,$C6,$7E,$06,$FC ; y
-	.db	$00,$00,$FE,$0C,$38,$60,$FE,$00 ; z
-	.db	$1C,$30,$30,$E0,$30,$30,$1C,$00 ; {
-	.db	$C0,$C0,$C0,$00,$C0,$C0,$C0,$00 ; |
-	.db	$E0,$30,$30,$1C,$30,$30,$E0,$00 ; }
-	.db	$76,$DC,$00,$00,$00,$00,$00,$00 ; ~
-	.db	$00,$10,$38,$6C,$C6,$C6,$FE,$00 ; .
+; To get the font data, load font.pf into 8x8 ROM PixelFont Editor, export it as an assembly include file,
+; and replace "0x(..)" with "0\1h" to make it spasm-compatible
+#include "font.asm"
 DebuggerCodeEnd:
 
 .echo $ - DebuggerCode2

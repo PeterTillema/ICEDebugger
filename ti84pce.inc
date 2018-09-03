@@ -17,6 +17,7 @@
 #define EQU .equ
 #define end .end
 #define END .end
+#define db  .db
 
 ; Hardware Defines
 ;------------------------------
