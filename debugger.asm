@@ -14,6 +14,7 @@
 #define TEMP                   21
 
 #define SCREEN_START (usbArea & 0FFFFF8h) + 8	; Note: mask to 8 bytes!
+#define BREAKPOINTS_START SCREEN_START + (lcdWidth * lcdHeight / 8)
 #define AMOUNT_OF_OPTIONS      9
 
 start:
@@ -183,6 +184,9 @@ StepCode:
 	ld	(iy + Y_POS), 1
 	ld	hl, (iy + PROG_START)
 	ld	bc, (iy + PROG_SIZE)
+GetBASICTokenLoopDispColon:
+	ld	a, ':'
+	call	PrintChar
 GetBASICTokenLoop:
 	ld	a, b
 	or	a, c
@@ -216,8 +220,29 @@ AdvanceLine:
 	ld	(iy + Y_POS), a
 	inc	hl
 	dec	bc
-	jr	GetBASICTokenLoop
+	cp	a, 229 - 7
+	jr	c, GetBASICTokenLoopDispColon
 BASICProgramDone:
+	ld	hl, SCREEN_START + (228 * lcdWidth / 8)
+	ld	de, 0FFFFFFh
+	ld	b, 5
+_:	ld	(hl), de
+	inc	hl
+	inc	hl
+	inc	hl
+	ld	(hl), de
+	inc	hl
+	inc	hl
+	inc	hl
+	ld	(hl), e
+	inc	hl
+	ld	(hl), e
+	inc	hl
+	djnz	-_
+	ld	(iy + Y_POS), 231
+	ld	(iy + X_POS), 0
+	ld	hl, StepString
+	call	PrintString
 	call	GetKeyAnyFast
 	jp	MainMenu
 	
@@ -655,6 +680,8 @@ JumpToLabelString:
 	.db	"Jump to label", 0
 QuitString:
 	.db	"Quit", 0
+StepString:
+	.db	"Step  StepOver   StepNext  StepOut  Quit", 0
 	
 SlotOptionsString:
 	.db	"Slot Type Name      DataPtr Size  Offset", 0
