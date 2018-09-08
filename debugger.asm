@@ -12,25 +12,42 @@
 #define X_POS                  19
 #define Y_POS                  20
 #define TEMP                   21
+#define SLOT_FUNCTIONS_POINTER 24
+#define VARIABLE_START         27
+#define LINES_START            30
+#define STARTUP_BREAKPOINTS    33
+#define LABELS_START           36
+#define AMOUNT_OF_BREAKPOINTS  39
+#define DEBUG_CURRENT_LINE     40
+#define DEBUG_LINE_START       43
 
 #define SCREEN_START (usbArea & 0FFFFF8h) + 8	; Note: mask to 8 bytes!
 #define BREAKPOINTS_START SCREEN_START + (lcdWidth * lcdHeight / 8)
+#define DEBUGGER_START         saveSScreen + 21945 - 260 - 4000		; See src/main.h
 #define AMOUNT_OF_OPTIONS      9
 
-start:
 	.db	083h
 	cp	a, a				; Signify start of ICE Debugger
 	ret
 	
 ; Here we actually start; the ICE program can check for these 3 bytes to make sure the debugger is loaded
 ; DE = compiled program name
+; Return C if failure
+	di
 	ld	iy, VARIABLES
 	ex	de, hl				; Input is DBG file
 	call	_Mov9ToOP1
 	call	_ChkFindSym			; Find program, must exists
-	jr	c, Return
+	ret	c
+	call	_ChkInRAM
 	ex	de, hl
+	jr	nc, +_
+	ld	bc, 9
+	add	hl, bc
+	ld	c, (hl)
+	add	hl, bc
 	inc	hl
+_:	inc	hl
 	inc	hl
 	ld	(iy + DBG_PROG_START), hl	; HL points to the source program now
 	dec	hl
@@ -38,7 +55,7 @@ start:
 	ld	a, ProgObj
 	ld	(OP1), a
 	call	_ChkFindSym			; Find debug program, must exists
-	jr	c, Return
+	ret	c
 	call	_ChkInRAM
 	ex	de, hl
 	ld	bc, 0
@@ -54,23 +71,77 @@ _:	ld	c, (hl)				; Get size
 	inc	hl
 	ld	(iy + PROG_SIZE), bc		; Store pointers
 	ld	(iy + PROG_START), hl
-	ld	iy, flags
+	ld	hl, (iy + DBG_PROG_START)
+	xor	a, a
+	ld	(iy + AMOUNT_OF_BREAKPOINTS), a
+	ld	c, a
+	ld	b, a
+	cpir
+	ld	(iy + SLOT_FUNCTIONS_POINTER), hl
+	inc	hl
+	inc	hl
+	inc	hl
+	ld	(iy + VARIABLE_START), hl
+	ld	b, (hl)				; Amount of variables
+	inc	hl
+	inc	b
+	dec	b
+	jr	z, +_
+SkipVariableLoop0:
+	ld	c, 255				; Prevent decrementing B; a variable name won't be longer than 255 bytes
+	cpir
+	djnz	SkipVariableLoop0
+_:	ld	(iy + LINES_START), hl
+	ld	de, (hl)
+	inc	hl
+	inc	hl
+	inc	hl
+	add	hl, de
+	add	hl, de
+	add	hl, de
+	add	hl, de
+	add	hl, de
+	add	hl, de
+	inc	hl				; Skip ending $FF byte
+	ld	(iy + STARTUP_BREAKPOINTS), hl
+	ld	c, (hl)
+	ld	b, 3
+	mlt	bc
+	inc	hl
+	add	hl, bc
+	ld	(iy + LABELS_START), hl
 	ld	hl, (windowHookPtr)		; Copy to safeRAM
 	ld	de, DebuggerCode1
 	add	hl, de
 	ld	de, DebuggerCode2
 	ld	bc, DebuggerCodeEnd - DebuggerCode2
 	ldir
-Return:
-	sbc	hl, hl
+	ld	hl, (iy + STARTUP_BREAKPOINTS)
+	ld	a, (hl)
+	or	a, a
+	ret	z
 	inc	hl
+InsertBreakpointLoop:
+	push	hl
+	ex	af, af'
+	ld	hl, (hl)
+	call	InsertBreakpoint
+	ex	af, af'
+	pop	hl
+	inc	hl
+	inc	hl
+	inc	hl
+	dec	a
+	jr	nz, InsertBreakpointLoop
 	ret
 
 DebuggerCode1:
-.org saveSScreen + 21945 - 260 - 4000		; See src/main.h
+.org DEBUGGER_START
 DebuggerCode2:
-; Backup registers and variables
+; This is the breakpoint handler
+; See breakpoints.txt for some more information
 
+; Backup registers and variables
 	di
 	push	af
 	push	bc
@@ -149,24 +220,12 @@ SelectEntry:
 	dec	a
 	jp	z, ViewBuffer
 	dec	a
-	jp	z, Breakpoints
-	dec	a
 	jp	z, JumpLabel
+	dec	a
+	jp	z, SafeExit
 	
 Quit:
-; Restore palette, usb area, variables and registers
-	ld	de, mpLcdPalette
-	lea	hl, iy + PALETTE_ENTRIES_BACKUP
-	ld	bc, 4
-	ldir
-	ld	hl, usbArea
-	ld	(hl), 0
-	push	hl
-	pop	de
-	inc	de
-	ld	bc, 14305
-	ldir
-	
+	call	RestorePaletteUSB
 	pop	ix
 	pop	hl
 	ld	(mpLcdUpbase), hl
@@ -179,9 +238,11 @@ Quit:
 	pop	af
 	ret
 	
+; =======================================================================================
 StepCode:
 	ld	(iy + X_POS), 1
 	ld	(iy + Y_POS), 1
+; TODO: get line number from call return pointer
 	ld	hl, (iy + PROG_START)
 	ld	bc, (iy + PROG_SIZE)
 GetBASICTokenLoopDispColon:
@@ -243,16 +304,38 @@ _:	ld	(hl), de
 	ld	(iy + X_POS), 0
 	ld	hl, StepString
 	call	PrintString
-	call	GetKeyAnyFast
+_:	call	GetKeyAnyFast
+	ld	l, 012h
+	ld	a, (hl)
+	rra
+	jr	c, BASICDebuggerQuit
+	rra
+	jr	c, BASICDebuggerStepOut
+	rra
+	jr	c, BASICDebuggerStepNext
+	rra
+	jr	c, BASICDebuggerStepOver
+	rra
+	jr	c, BASICDebuggerStep
+	ld	l, 01Ch
+	bit	0, (hl)
+	jr	nz, BASICDebuggerSwitchBreakpoint
+	bit	6, (hl)
+	jr	nz, BASICDebuggerQuit
+	jr	-_
+	
+BASICDebuggerStepOut:
+BASICDebuggerStepNext:
+BASICDebuggerStepOver:
+BASICDebuggerStep:
+BASICDebuggerSwitchBreakpoint:
+	
+BASICDebuggerQuit:
 	jp	MainMenu
 	
+; =======================================================================================
 ViewVariables:
-	ld	hl, (iy + DBG_PROG_START) 
-	xor	a, a
-	cpir
-	inc	hl				; Skip FILEIOC functions pointer
-	inc	hl
-	inc	hl
+	ld	hl, (iy + VARIABLE_START)
 	ld	b, (hl)				; Amount of variables
 	inc	hl
 	inc	b
@@ -287,13 +370,13 @@ NoVariablesFound1:
 	call	GetKeyAnyFast
 	jp	MainMenu
 	
+; =======================================================================================
 ViewMemory:
 	jp	Quit
 	
+; =======================================================================================
 ViewSlots:
-	ld	hl, (iy + DBG_PROG_START)
-	xor	a, a
-	cpir
+	ld	hl, (iy + SLOT_FUNCTIONS_POINTER)
 	ld	hl, (hl)			; Pointer to FILEIOC functions
 	add	hl, de
 	or	a, a
@@ -365,11 +448,10 @@ IsArchived_SMC = $+1
 	call	0
 	ld	a, l
 	or	a, a
-	jr	z, InRAM
+	jr	z, +_
 	ld	a, '*'
 	call	PrintChar
-InRAM:
-	ld	hl, TempStringData
+_:	ld	hl, TempStringData
 	push	hl
 GetName_SMC = $+1
 	call	0
@@ -400,6 +482,7 @@ AllSlotsClosed:
 	call	GetKeyAnyFast
 	jp	MainMenu
 	
+; =======================================================================================
 ViewScreen:
 	ld	hl, 6
 	add	hl, sp
@@ -412,7 +495,8 @@ ViewScreen:
 	ld	(mpLcdUpBase), hl
 	call	GetKeyAnyFast
 	jp	MainMenuSetLCDConfig
-
+	
+; =======================================================================================
 ViewBuffer:
 	ld	hl, 6
 	add	hl, sp
@@ -423,32 +507,30 @@ ViewBuffer:
 	call	GetKeyAnyFast
 	jp	MainMenuSetLCDConfig
 	
-Breakpoints:
-	
-JumpLabel:
-	ld	hl, (iy + DBG_PROG_START)
-	xor	a, a
-	cpir
-	inc	hl				; Skip FILEIOC functions pointer
-	inc	hl
-	inc	hl
-	ld	b, (hl)				; Amount of variables
-	inc	hl
-	inc	b
-	dec	b
-	jr	z, NoVariablesFound2
-SkipVariableLoop:
-	ld	c, 255				; Prevent decrementing B; a variable name won't be longer than 255 bytes
-	cpir
-	djnz	SkipVariableLoop
-NoVariablesFound2:
-	ld	de, (hl)			; Amount of lines
-	inc	hl
-	inc	hl
-	inc	hl
-	add	hl, de				; Skip line lengths
+; =======================================================================================
+SafeExit:
+	ld	hl, 24
+	add	hl, sp
+	ld	sp, hl
+_:	pop	hl
+	ld	de, ramStart
+	or	a, a
+	sbc	hl, de
+	jr	nc, -_
 	add	hl, de
-	inc	hl				; Skip ending byte $FF
+	push	hl
+	ld	a, lcdBpp16
+	ld	hl, mpLcdCtrl
+	ld	(hl), a
+	ld	hl, vRAM
+	ld	(mpLcdUpbase), hl
+	call	RestorePaletteUSB
+	ld	iy, flags
+	jp	_DrawStatusBar
+	
+; =======================================================================================
+JumpLabel:
+	ld	hl, (iy + LABELS_START)
 	ld	b, (hl)				; Amount of labels
 	ld	d, b				; Amount of labels
 	inc	hl
@@ -502,6 +584,56 @@ NoLabelsFound:
 ; ==============================================================
 ; Routines are starting here
 ; ==============================================================
+
+InsertBreakpoint:
+; HL = line number
+	push	ix
+	ld	c, (iy + AMOUNT_OF_BREAKPOINTS)
+	ld	b, 10
+	mlt	bc
+	ld	ix, BREAKPOINTS_START
+	add	ix, bc
+	ld	(ix), hl			; Line number
+	ld	de, (iy + LINES_START)
+	inc	de
+	inc	de
+	inc	de
+	ex	de, hl
+	add	hl, de
+	add	hl, de
+	add	hl, de
+	add	hl, de
+	add	hl, de
+	add	hl, de
+	ld	hl, (hl)
+	ld	(ix + 3), hl			; Program pointer
+	lea	de, ix + 6
+	ld	bc, 4
+	ldir
+	dec	hl
+	dec	hl
+	dec	hl
+	ld	de, DEBUGGER_START
+	ld	(hl), de
+	dec	hl
+	ld	(hl), 0CDh			; CALL DEBUGGER_START
+	pop	ix
+	ret
+	
+RestorePaletteUSB:
+; Restore palette, usb area, variables and registers
+	ld	de, mpLcdPalette
+	lea	hl, iy + PALETTE_ENTRIES_BACKUP
+	ld	bc, 4
+	ldir
+	ld	hl, usbArea
+	ld	(hl), 0
+	push	hl
+	pop	de
+	inc	de
+	ld	bc, 14305
+	ldir
+	ret
 
 SelectOption:
 ; D = max amount of options
@@ -674,15 +806,14 @@ ViewScreenString:
 	.db	"View screen", 0
 ViewBufferString:
 	.db	"View buffer", 0
-BreakpointsString:
-	.db	"Add/remove breakpoints", 0
 JumpToLabelString:
 	.db	"Jump to label", 0
+BreakpointsString:
+	.db	"Save exit program", 0
 QuitString:
 	.db	"Quit", 0
 StepString:
 	.db	"Step  StepOver   StepNext  StepOut  Quit", 0
-	
 SlotOptionsString:
 	.db	"Slot Type Name      DataPtr Size  Offset", 0
 
