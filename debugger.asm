@@ -21,9 +21,10 @@
 #define DEBUG_CURRENT_LINE     40
 #define DEBUG_LINE_START       43
 
-#define SCREEN_START (usbArea & 0FFFFF8h) + 8	; Note: mask to 8 bytes!
+#define SCREEN_START           (usbArea & 0FFFFF8h) + 8	; Note: mask to 8 bytes!
 #define BREAKPOINTS_START SCREEN_START + (lcdWidth * lcdHeight / 8)
 #define DEBUGGER_START         saveSScreen + 21945 - 260 - 4000		; See src/main.h
+#define ICE_VARIABLES          0D13F56h		; See src/main.h
 #define AMOUNT_OF_OPTIONS      9
 
 	.db	083h
@@ -155,8 +156,6 @@ DebuggerCode2:
 	push	ix
 	
 	ld	iy, VARIABLES
-	ld	ix, 0D13F56h			; See src/main.h
-	
 	ld	hl, mpLcdPalette
 	lea	de, iy + PALETTE_ENTRIES_BACKUP
 	ld	bc, 4
@@ -240,18 +239,65 @@ Quit:
 	
 ; =======================================================================================
 StepCode:
+	ld	hl, 24
+	add	hl, sp
+	ld	de, (hl)
+	dec	de
+	dec	de
+	dec	de
+	dec	de					; DE = call pointer
+	ld	hl, (iy + LINES_START)
+	inc	hl
+	inc	hl
+	inc	hl
+	ld	bc, 6
+	exx
+	sbc	hl, hl
+CheckLineLoop:
+	exx
+	ld	a, (hl)
+	inc	a
+	jr	z, +_
+	push	hl
+	ld	hl, (hl)
+	or	a, a
+	sbc	hl, de
+	pop	hl
+	jr	nc, +_
+	add	hl, bc
+	exx
+	inc	hl
+	jr	CheckLineLoop
+_:	exx						; HL' = line number
+	ld	bc, 10					; Max amount of lines before active line
+	or	a, a
+	sbc	hl, bc
+	jr	nc, +_
+	add	hl, bc
+	ld	c, l
+	or	a, a
+	sbc	hl, hl
+_:	ex	de, hl					; DE = amount of lines to skip
+	ld	ixl, c					; IXL = amount of lines before active line
 	ld	(iy + X_POS), 1
 	ld	(iy + Y_POS), 1
-; TODO: get line number from call return pointer
 	ld	hl, (iy + PROG_START)
 	ld	bc, (iy + PROG_SIZE)
 GetBASICTokenLoopDispColon:
+	ld	a, d
+	or	a, e
+	jr	nz, +_
 	ld	a, ':'
 	call	PrintChar
+	inc	de
+_:	dec	de
 GetBASICTokenLoop:
-	ld	a, b
+	ld	a, b					; Program's done!
 	or	a, c
 	jr	z, BASICProgramDone
+	ld	a, d					; Out of screen
+	or	a, e
+	jr	nz, DontDisplayToken
 	ld	a, (iy + X_POS)
 	cp	a, 40
 	jr	z, DontDisplayToken
@@ -259,11 +305,13 @@ GetBASICTokenLoop:
 	cp	a, tEnter
 	jr	z, AdvanceLine
 	push	bc
+	push	de
 	push	hl
 	call	_Get_Tok_Strng
 	ld	hl, OP3
 	call	PrintString
 	pop	hl
+	pop	de
 	pop	bc
 DontDisplayToken:
 	ld	a, (hl)
@@ -279,6 +327,7 @@ AdvanceLine:
 	ld	a, (iy + Y_POS)
 	add	a, 9
 	ld	(iy + Y_POS), a
+	dec	ixl
 	inc	hl
 	dec	bc
 	cp	a, 229 - 7
@@ -359,6 +408,7 @@ PrintVariableLoop:
 	add	a, c
 	sub	a, 080h
 	ld	(VariableOffset), a
+	ld	ix, ICE_VARIABLES
 VariableOffset = $+2
 	ld	hl, (ix + 0)
 	call	ToString
@@ -776,17 +826,23 @@ PrintChar:
 	ex	de, hl
 	ld	hl, _DefaultTextData
 	ld	b, 8
-	ld	a, b
+	ld	ixh, b
 	mlt	bc
 	add	hl, bc
 	ld	bc, (lcdWidth / 8) - 1
 PutCharLoop:
-	ldi
-	inc	bc
+	ld	a, ixl
+	or	a, a
+	ld	a, (hl)
+	jr	nz, +_
+	cpl
+_:	ld	(de), a
+	inc	de
+	inc	hl
 	ex	de, hl
 	add	hl, bc
 	ex	de, hl
-	dec	a
+	dec	ixh
 	jr	nz, PutCharLoop
 DontDisplayChar:
 	pop	bc
