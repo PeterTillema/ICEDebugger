@@ -469,7 +469,47 @@ NoVariablesFound1:
 	
 ; =======================================================================================
 ViewMemory:
-	jp	Quit
+	ld	hl, ramStart
+	ld	c, 24
+MemoryDrawLine:
+	ld	a, 24
+	sub	a, c
+	add	a, a
+	ld	e, a
+	add	a, a
+	add	a, a
+	add	a, e
+	ld	(iy + Y_POS), a
+	ld	(iy + X_POS), 0
+	ld	a, 0F2h				; $
+	call	PrintChar
+	call	PrintUInt
+	inc	(iy + X_POS)
+	ld	b, 8
+MemoryDrawLineOfBytes:
+	ld	a, (hl)
+	inc	hl
+	call	PrintByte
+	inc	(iy + X_POS)
+	djnz	MemoryDrawLineOfBytes
+	ld	de, -8
+	add	hl, de
+	ld	b, 8
+MemoryDrawLineOfChars:
+	ld	a, (hl)
+	inc	hl
+	or	a, a
+	jr	nz, +_
+	ld	a, '.'
+_:	cp	a, 0F4h
+	jr	c, +_
+	ld	a, '.'
+_:	call	PrintChar
+	djnz	MemoryDrawLineOfChars
+	dec	c
+	jr	nz, MemoryDrawLine
+	call	GetKeyAnyFast
+	jp	MainMenu
 	
 ; =======================================================================================
 ViewSlots:
@@ -559,12 +599,7 @@ GetName_SMC = $+1
 	call	PrintChar
 GetDataPtr_SMC = $+1
 	call	0
-	call	_SetAToHLU
-	call	PrintByte
-	ld	a, h
-	call	PrintByte
-	ld	a, l
-	call	PrintByte
+	call	PrintUInt
 	ld	(iy + X_POS), 34
 Tell_SMC = $+1
 	call	0
@@ -780,26 +815,6 @@ ReturnZ:
 	cp	a, a
 	ret
 	
-PrintByte:
-	ld	b, a
-	rra
-	rra
-	rra
-	rra
-	and	a, 00Fh
-	cp	a, 10
-	jr	c, +_
-	add	a, 'A' - '9' - 1
-_:	add	a, '0'
-	call	PrintChar
-	ld	a, b
-	and	a, 00Fh
-	cp	a, 10
-	jr	c, +_
-	add	a, 'A' - '9' - 1
-_:	add	a, '0'
-	jp	PrintChar
-	
 ToString:
 	push	bc
 	ld	de, TempStringData + 8
@@ -851,6 +866,32 @@ PrintString:
 	ret	z
 	call	PrintChar
 	jr	PrintString
+	
+PrintUInt:
+	call	_SetAToHLU
+	call	PrintByte
+	ld	a, h
+	call	PrintByte
+	ld	a, l
+	
+PrintByte:
+	ld	d, a
+	rra
+	rra
+	rra
+	rra
+	and	a, 00Fh
+	cp	a, 10
+	jr	c, +_
+	add	a, 'A' - '9' - 1
+_:	add	a, '0'
+	call	PrintChar
+	ld	a, d
+	and	a, 00Fh
+	cp	a, 10
+	jr	c, +_
+	add	a, 'A' - '9' - 1
+_:	add	a, '0'
 	
 PrintChar:
 	push	hl
