@@ -246,26 +246,24 @@ StepCode:
 	dec	de
 	dec	de
 	dec	de					; DE = call pointer
-	ld	hl, (iy + LINES_START)
-	inc	hl
-	inc	hl
-	inc	hl
-	ld	bc, 6
+	
+	ld	hl, (iy + STARTUP_BREAKPOINTS)
+	dec	hl
+	ld	bc, -6
 	exx
-	sbc	hl, hl
+	ld	hl, (iy + LINES_START)
+	ld	hl, (hl)
 CheckLineLoop:
 	exx
+	add	hl, bc
 	push	hl
 	ld	hl, (hl)
-	or	a, a
+	scf
 	sbc	hl, de
 	pop	hl
-	jr	nc, +_
-	add	hl, bc
 	exx
-	inc	hl
-	jr	CheckLineLoop
-_:	exx
+	dec	hl
+	jr	nc, CheckLineLoop
 	ld	(iy + DEBUG_CURRENT_LINE), hl
 	ex	de, hl					; DE = line_numer
 	ld	hl, (iy + LINES_START)
