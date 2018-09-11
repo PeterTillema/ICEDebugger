@@ -255,9 +255,6 @@ StepCode:
 	sbc	hl, hl
 CheckLineLoop:
 	exx
-	ld	a, (hl)
-	inc	a
-	jr	z, +_
 	push	hl
 	ld	hl, (hl)
 	or	a, a
@@ -268,42 +265,90 @@ CheckLineLoop:
 	exx
 	inc	hl
 	jr	CheckLineLoop
-_:	exx						; HL' = line number
-	ld	bc, 10					; Max amount of lines before active line
+_:	exx
+	ld	(iy + DEBUG_CURRENT_LINE), hl
+	ex	de, hl					; DE = line_numer
+	ld	hl, (iy + LINES_START)
+	ld	hl, (hl)				; HL = amount_of_lines
+	
+; If current_line <= 13 or amount_of_lines <= 25
+	ld	bc, 14
+	ld	a, d
 	or	a, a
+	jr	nz, CheckClipBottom
+	ld	a, e
+	cp	a, c
+	jr	c, ClipAtTop
+CheckAmountOfLines:
+	ld	c, 26
 	sbc	hl, bc
-	jr	nc, +_
 	add	hl, bc
-	ld	c, l
-	or	a, a
-	sbc	hl, hl
-_:	ex	de, hl					; DE = amount of lines to skip
-	ld	ixl, c					; IXL = amount of lines before active line
-	ld	(iy + X_POS), 1
-	ld	(iy + Y_POS), 1
+	jr	nc, CheckClipBottom
+ClipAtTop:
+; lines_to_skip = 0
+	ld	de, 0
+; highlight_line = current_line
+	ld	ixl, a
+	jr	DoDisplayLines
+	
+CheckClipBottom:
+; Else If amount_of_lines - current_line <= 13
+	sbc	hl, de
+	ld	c, 14
+	sbc	hl, bc
+	add	hl, bc
+	jr	nc, DisplayLinesNormal
+	add	hl, de
+; highlight_line = 25 - (amount_of_lines - current_line) = 25 + current_line - amount_of_lines
+	ld	a, 25
+	ld	c, a
+	add	a, e
+	sub	a, l
+; lines_to_skip = amount_of_lines - 25
+	sbc	hl, bc
+	ex	de, hl
+	add	a, e
+	ld	ixl, a
+	jr	DoDisplayLines
+DisplayLinesNormal:
+; Else
+; lines_to_skip = current_line - 13
+	ex	de, hl
+	ld	de, 12
+; highlight_line = 13
+	ld	a, e
+	sbc	hl, de
+	ex	de, hl
+	add	a, e
+	ld	ixl, a
+DoDisplayLines:
+; BC = program length
+; DE = amount of lines to skip
+; IXL = amount of lines before active line
+	ld	a, 1
 	ld	hl, (iy + PROG_START)
 	ld	bc, (iy + PROG_SIZE)
 GetBASICTokenLoopDispColon:
+	ld	(iy + Y_POS), a
+	ld	(iy + X_POS), 1
 	ld	a, d
 	or	a, e
-	jr	nz, +_
+	jr	nz, GetBASICTokenLoop
 	ld	a, ':'
 	call	PrintChar
-	inc	de
-_:	dec	de
 GetBASICTokenLoop:
 	ld	a, b					; Program's done!
 	or	a, c
 	jr	z, BASICProgramDone
+	ld	a, (hl)
+	cp	a, tEnter
+	jr	z, AdvanceLine
 	ld	a, d					; Out of screen
 	or	a, e
 	jr	nz, DontDisplayToken
 	ld	a, (iy + X_POS)
 	cp	a, 40
 	jr	z, DontDisplayToken
-	ld	a, (hl)
-	cp	a, tEnter
-	jr	z, AdvanceLine
 	push	bc
 	push	de
 	push	hl
@@ -323,16 +368,20 @@ DontDisplayToken:
 	dec	bc
 _:	jr	GetBASICTokenLoop
 AdvanceLine:
-	ld	(iy + X_POS), 1
-	ld	a, (iy + Y_POS)
-	add	a, 9
-	ld	(iy + Y_POS), a
 	dec	ixl
+	ld	a, d
+	or	a, e
+	ld	a, (iy + Y_POS)
+	jr	nz, +_
+	add	a, 9
+	inc	de
+_:	dec	de
 	inc	hl
 	dec	bc
 	cp	a, 229 - 7
 	jr	c, GetBASICTokenLoopDispColon
 BASICProgramDone:
+	ld	ixl, 1
 	ld	hl, SCREEN_START + (228 * lcdWidth / 8)
 	ld	de, 0FFFFFFh
 	ld	b, 5
