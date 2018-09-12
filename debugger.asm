@@ -1,7 +1,5 @@
 #include "ti84pce.inc"
 
-
-
 #define VARIABLES cursorImage + 500		; Apparently the GRAPHX lib uses cursorImage to fill the screen
 #define PROG_SIZE              0
 #define PROG_START             3
@@ -11,15 +9,14 @@
 #define INPUT_LINE             16
 #define X_POS                  19
 #define Y_POS                  20
-#define TEMP                   21
-#define SLOT_FUNCTIONS_POINTER 24
-#define VARIABLE_START         27
-#define LINES_START            30
-#define STARTUP_BREAKPOINTS    33
-#define LABELS_START           36
-#define AMOUNT_OF_BREAKPOINTS  39
-#define DEBUG_CURRENT_LINE     40
-#define DEBUG_LINE_START       43
+#define SLOT_FUNCTIONS_POINTER 21
+#define VARIABLE_START         24
+#define LINES_START            27
+#define STARTUP_BREAKPOINTS    30
+#define LABELS_START           33
+#define AMOUNT_OF_BREAKPOINTS  36
+#define DEBUG_CURRENT_LINE     39
+#define DEBUG_LINE_START       40
 
 #define SCREEN_START           (usbArea & 0FFFFF8h) + 8	; Note: mask to 8 bytes!
 #define BREAKPOINTS_START SCREEN_START + (lcdWidth * lcdHeight / 8)
@@ -186,7 +183,7 @@ MainMenu:
 	ld	c, 0
 	ld	b, AMOUNT_OF_OPTIONS
 	ld	e, b
-	ld	hl, StepThroughCodeString
+	ld	hl, MainOptionsString
 	
 PrintOptionsLoop:
 	push	bc
@@ -435,12 +432,13 @@ BASICDebuggerQuit:
 ; =======================================================================================
 ViewVariables:
 ; B = amount of variables to display
+; C = currently selected variable
 ; D = start offset
 ; E = amount of variables
-	xor	a, a
 	ld	hl, (iy + VARIABLE_START)
+	xor	a, a
 	cp	a, (hl)
-	jr	z, NoVariablesFound1
+	jr	z, NoVariablesFound
 	ld	d, a
 	ld	c, a
 PrintAllVariables:
@@ -489,7 +487,7 @@ VariableOffset = $+2
 	djnz	PrintVariableLoop
 	call	SelectOption
 	jr	nc, PrintAllVariables
-NoVariablesFound1:
+NoVariablesFound:
 	call	z, GetKeyAnyFast
 	jp	MainMenu
 	
@@ -676,32 +674,62 @@ _:	pop	hl
 	
 ; =======================================================================================
 JumpLabel:
+; B = amount of labels to display
+; C = currently selected label
+; D = start offset
+; E = amount of variables
 	ld	hl, (iy + LABELS_START)
-	ld	b, (hl)				; Amount of labels
-	ld	d, b				; Amount of labels
-	inc	hl
-	ld	(iy + TEMP), hl			; Save pointer to recall later
-	inc	b
-	dec	b
+	xor	a, a
+	cp	a, (hl)
 	jr	z, NoLabelsFound
-	ld	(iy + Y_POS), 1
-GetLabelsLoop:
+	ld	d, a
+	ld	c, a
+PrintAllLabels:
+	exx
+	call	ClearScreen
+	exx
+	ld	hl, (iy + LABELS_START)
+	ld	e, (hl)
+	inc	hl
+	ld	b, 26
+	ld	a, b
+	cp	a, e
+	jr	c, +_
+	ld	b, e
+_:	ld	(iy + Y_POS), 1
+	xor	a, a
+	cp	a, d
+	jr	z, PrintLabelLoop
+	push	bc
+	ld	b, d
+_:	ld	c, 255
+	cpir
+	inc	hl
+	inc	hl
+	inc	hl
+	djnz	-_
+	pop	bc
+PrintLabelLoop:
 	ld	(iy + X_POS), 1
 	call	PrintString
 	inc	hl				; Skip label address
 	inc	hl
 	inc	hl
 	call	AdvanceLine
-	djnz	GetLabelsLoop
+	djnz	PrintLabelLoop
 	call	SelectOption
-	jp	z, MainMenu
-	ld	hl, (iy + TEMP)
-	xor	a, a
-	ld	c, a
-	ld	b, a
-	inc	e
-	dec	e
+	jr	nc, PrintAllLabels
+	jp	nz, MainMenu
+; Get label address
+	ld	hl, (iy + LABELS_START)
+	inc	hl
+	ld	a, d
+	add	a, c
 	jr	z, GetLabelAddress
+	ld	e, a
+	xor	a, a
+	ld	b, a
+	ld	c, b
 SkipLabelsLoop:
 	cpir
 	inc	hl
@@ -972,23 +1000,15 @@ DontDisplayChar:
 	pop	hl
 	ret
 	
-StepThroughCodeString:
+MainOptionsString:
 	.db	"Step through code", 0
-VariableViewingString:
 	.db	"View/edit variables", 0
-MemoryViewingString:
 	.db	"View/edit memory", 0
-ViewOpenedSlotsString:
 	.db	"View opened slots", 0
-ViewScreenString:
 	.db	"View screen", 0
-ViewBufferString:
 	.db	"View buffer", 0
-JumpToLabelString:
 	.db	"Jump to label", 0
-BreakpointsString:
 	.db	"Save exit program", 0
-QuitString:
 	.db	"Quit", 0
 StepString:
 	.db	"Step  StepOver   StepNext  StepOut  Quit", 0
@@ -997,7 +1017,7 @@ SlotOptionsString:
 
 _DefaultTextData:
 ; To get the font data, load font.pf into 8x8 ROM PixelFont Editor, export it as an assembly include file,
-; and replace "0x(..)" with "0\1h" to make it spasm-compatible
+; and replace the regex "0x(..)" with "0\1h" to make it spasm-compatible
 #include "font.asm"
 DebuggerCodeEnd:
 
