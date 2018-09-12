@@ -499,6 +499,7 @@ _:	xor	a, a
 	djnz	-_
 	ld	(iy + X_POS), 25
 	ld	de, TempStringData
+	ld	b, 8
 DisplayEmptyCursor:
 	ld	a, 0E4h				; _
 	call	PrintChar
@@ -540,7 +541,7 @@ GotVariableChar:
 	add	a, '0'
 	inc	de
 	call	PrintChar
-	jr	DisplayEmptyCursor
+	djnz	DisplayEmptyCursor
 GetVariableNewNumber:
 	xor	a, a
 	ld	(de), a
