@@ -122,6 +122,7 @@ _:	ld	(iy + LINES_START), hl
 	or	a, a
 	ret	z
 	inc	hl
+	push	ix
 InsertBreakpointLoop:
 	push	hl
 	ex	af, af'
@@ -134,6 +135,7 @@ InsertBreakpointLoop:
 	inc	hl
 	dec	a
 	jr	nz, InsertBreakpointLoop
+	pop	ix
 	ret
 
 DebuggerCode1:
@@ -183,7 +185,7 @@ MainMenu:
 	call	ClearScreen
 	ld	c, 0
 	ld	b, AMOUNT_OF_OPTIONS
-	ld	d, b
+	ld	e, b
 	ld	hl, StepThroughCodeString
 	
 PrintOptionsLoop:
@@ -200,11 +202,12 @@ PrintOptionsLoop:
 	pop	bc
 	inc	c
 	djnz	PrintOptionsLoop
+	ld	d, b
+	ld	c, b
 	call	SelectOption
-	jr	z, Quit
+	jr	nz, Quit
 
-SelectEntry:
-	ld	a, e
+	ld	a, c
 	call	ClearScreen
 	or	a, a
 	jr	z, StepCode
@@ -340,7 +343,7 @@ GetBASICTokenLoop:
 	jr	z, BASICProgramDone
 	ld	a, (hl)
 	cp	a, tEnter
-	jr	z, AdvanceLine
+	jr	z, AdvanceBASICLine
 	ld	a, d					; Out of screen
 	or	a, e
 	jr	nz, DontDisplayToken
@@ -365,7 +368,7 @@ DontDisplayToken:
 	inc	hl
 	dec	bc
 _:	jr	GetBASICTokenLoop
-AdvanceLine:
+AdvanceBASICLine:
 	dec	ixl
 	ld	a, d
 	or	a, e
@@ -431,54 +434,74 @@ BASICDebuggerQuit:
 	
 ; =======================================================================================
 ViewVariables:
+; B = amount of variables to display
+; D = start offset
+; E = amount of variables
+	xor	a, a
 	ld	hl, (iy + VARIABLE_START)
-	ld	b, (hl)				; Amount of variables
-	inc	hl
-	inc	b
-	dec	b
+	cp	a, (hl)
 	jr	z, NoVariablesFound1
-	ld	c, 0
+	ld	d, a
+	ld	c, a
+PrintAllVariables:
+	exx
+	call	ClearScreen
+	exx
+	ld	hl, (iy + VARIABLE_START)
+	ld	e, (hl)
+	inc	hl
+	ld	b, 26				; Get amount of variables to display
+	ld	a, b
+	cp	a, e
+	jr	c, +_
+	ld	b, e
+_:	ld	(iy + Y_POS), 1
+	ld	a, d
+	add	a, a
+	add	a, d
+	sub	a, 3 + 080h
+	ld	(VariableOffset), a
+	xor	a, a
+	cp	a, d
+	jr	z, PrintVariableLoop
+	push	bc
+	ld	b, d
+_:	ld	c, 255
+	cpir
+	djnz	-_
+	pop	bc
 PrintVariableLoop:
-	ld	a, c
-	add	a, a
-	add	a, a
-	add	a, a
-	add	a, c
-	inc	a
-	ld	(iy + Y_POS), a
-	ld	(iy + X_POS), 0
+	ld	(iy + X_POS), 1
 	call	PrintString
-	ld	(iy + X_POS), 23
+	ld	a, ':'
+	call	PrintChar
+	ld	(iy + X_POS), 25
 	push	hl
-	ld	a, c
-	add	a, a
-	add	a, c
-	sub	a, 080h
+	ld	a, (VariableOffset)
+	add	a, 3
 	ld	(VariableOffset), a
 	ld	ix, ICE_VARIABLES
 VariableOffset = $+2
-	ld	hl, (ix + 0)
+	ld	hl, (ix - 080h)
 	call	ToString
 	call	PrintString
 	pop	hl
-	inc	c
+	call	AdvanceLine
 	djnz	PrintVariableLoop
+	call	SelectOption
+	jr	nc, PrintAllVariables
 NoVariablesFound1:
-	call	GetKeyAnyFast
+	call	z, GetKeyAnyFast
 	jp	MainMenu
 	
 ; =======================================================================================
 ViewMemory:
 	ld	hl, ramStart
 	ld	c, 24
+	ld	(iy + Y_POS), 0
 MemoryDrawLine:
-	ld	a, 24
-	sub	a, c
-	add	a, a
-	ld	e, a
-	add	a, a
-	add	a, a
-	add	a, e
+	ld	a, (iy + Y_POS)
+	add	a, 10
 	ld	(iy + Y_POS), a
 	ld	(iy + X_POS), 0
 	ld	a, 0F2h				; $
@@ -545,15 +568,10 @@ ViewSlots:
 	call	PrintString
 	ld	b, 5
 	ld	c, 1
+	inc	(iy + Y_POS)
 GetSlotLoop:
 	push	bc
-	ld	a, c
-	add	a, a
-	add	a, a
-	add	a, a
-	add	a, c
-	inc	a
-	ld	(iy + Y_POS), a
+	call	AdvanceLine
 	ld	(iy + X_POS), 0
 	ld	a, c
 	add	a, '0'
@@ -670,21 +688,14 @@ JumpLabel:
 	inc	b
 	dec	b
 	jr	z, NoLabelsFound
-	ld	c, 0
+	ld	(iy + Y_POS), 1
 GetLabelsLoop:
-	ld	a, c
-	add	a, a
-	add	a, a
-	add	a, a
-	add	a, c
-	inc	a
-	ld	(iy + Y_POS), a
 	ld	(iy + X_POS), 1
 	call	PrintString
 	inc	hl				; Skip label address
 	inc	hl
 	inc	hl
-	inc	c
+	call	AdvanceLine
 	djnz	GetLabelsLoop
 	call	SelectOption
 	jp	z, MainMenu
@@ -719,7 +730,6 @@ NoLabelsFound:
 
 InsertBreakpoint:
 ; HL = line number
-	push	ix
 	ld	c, (iy + AMOUNT_OF_BREAKPOINTS)
 	ld	b, 10
 	mlt	bc
@@ -749,7 +759,6 @@ InsertBreakpoint:
 	ld	(hl), de
 	dec	hl
 	ld	(hl), 0CDh			; CALL DEBUGGER_START
-	pop	ix
 	ret
 	
 RestorePaletteUSB:
@@ -768,16 +777,24 @@ RestorePaletteUSB:
 	ret
 
 SelectOption:
-; D = max amount of options
-; E = selected option
-	dec	d
-	ld	e, 0
+; Inputs:
+;   E = amount of options
+;   D = start offset
+;   C = currently selected option
+; Returns:
+;   Carry flag set:
+;     Zero flag set = [ENTER]
+;     Zero flag reset = [CLEAR]
+;   Carry flag reset:
+;     Zero flag reset = [UP]
+;     Zero flag set = [DOWN]
+	dec	e
 PrintCursor:
-	ld	a, e
+	ld	a, c
 	add	a, a
 	add	a, a
 	add	a, a
-	add	a, e
+	add	a, c
 	inc	a
 	ld	(iy + Y_POS), a
 	ld	(iy + X_POS), 0
@@ -788,35 +805,55 @@ CheckKeyLoop:
 	call	GetKeyAnyFast
 	ld	l, 01Ch
 	bit	0, (hl)
-	ret	nz
+	jr	nz, PressedEnter
 	bit	6, (hl)
-	jr	nz, ReturnZ
+	jr	nz, PressedClear
 	ld	l, 01Eh
 	bit	0, (hl)
 	jr	nz, MoveCursorDown
 	bit	3, (hl)
 	jr	z, CheckKeyLoop
 MoveCursorUp:
-	ld	a, e
-	or	a, a
+	ld	a, c
+	add	a, d
 	jr	z, CheckKeyLoop
-	dec	e
+	sub	a, d
+	jr	z, PressedUp
+	dec	c
 	jr	EraseCursor
 MoveCursorDown:
-	ld	a, e
-	cp	a, d
+	ld	a, c
+	add	a, d
+	cp	a, e
 	jr	z, CheckKeyLoop
-	inc	e
+	ld	a, c
+	cp	a, 25
+	jr	z, PressedDown
+	inc	c
 EraseCursor:
 	xor	a, a
 	call	PrintChar
 	jr	PrintCursor
-ReturnZ:
+PressedEnter:
+	cp	a, a
+	scf
+	ret
+PressedClear:
+	or	a, 1
+	scf
+	ret
+PressedUp:
+	dec	d
+	or	a, 1
+	ret
+PressedDown:
+	inc	d
 	cp	a, a
 	ret
 	
 ToString:
 	push	bc
+	push	de
 	ld	de, TempStringData + 8
 DivideLoop:
 	ld	a, 10
@@ -828,6 +865,7 @@ DivideLoop:
 	sbc	hl, de
 	jr	nz, DivideLoop
 	ex	de, hl
+	pop	de
 	pop	bc
 	ret
 	
@@ -858,6 +896,12 @@ _:	cp	a, (hl)
 	jr	nz, -_
 	ld	a, 20
 	jp	_DelayTenTimesAms
+	
+AdvanceLine:
+	ld	a, (iy + Y_POS)
+	add	a, 9
+	ld	(iy + Y_POS), a
+	ret
 	
 PrintString:
 	ld	a, (hl)
