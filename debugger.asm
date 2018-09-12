@@ -438,8 +438,10 @@ ViewVariables:
 	ld	hl, (iy + VARIABLE_START)
 	xor	a, a
 	cp	a, (hl)
-	jr	z, NoVariablesFound
-	ld	d, a
+	jr	nz, +_
+	call	GetKeyAnyFast
+	jp	MainMenu
+_:	ld	d, a
 	ld	c, a
 PrintAllVariables:
 	exx
@@ -487,9 +489,92 @@ VariableOffset = $+2
 	djnz	PrintVariableLoop
 	call	SelectOption
 	jr	nc, PrintAllVariables
-NoVariablesFound:
-	call	z, GetKeyAnyFast
-	jp	MainMenu
+	jp	nz, MainMenu
+; Edit the variable
+	exx					; Save BC and DE for later
+	ld	(iy + X_POS), 25
+	ld	b, 8
+_:	xor	a, a
+	call	PrintChar
+	djnz	-_
+	ld	(iy + X_POS), 25
+	ld	de, TempStringData
+DisplayEmptyCursor:
+	ld	a, 0E4h				; _
+	call	PrintChar
+GetVariableNumberLoop:
+	call	GetKeyAnyFast
+	ld	l, 01Ch
+	bit	0, (hl)
+	jr	nz, GetVariableNewNumber
+	ld	l, 016h
+	ld	a, (hl)
+	and	a, 000001111b
+	jr	z, Check258
+	cp	a, 4				; 00000001 (1) -> 0
+	jr	nz, +_				; 00000010 (2) -> 1
+	inc	a				; 00000100 (4) -> 4
+_:	dec	a				; 00001000 (8) -> 7
+	jr	GotVariableChar
+Check258:
+	ld	l, 018h
+	ld	a, (hl)
+	and	a, 000001110b
+	jr	z, Check359
+	cp	a, 4				; 00000010 (2) -> 2
+	jr	nz, GotVariableChar		; 00000100 (4) -> 5
+	inc	a				; 00001000 (8) -> 8
+	jr	GotVariableChar
+Check359:
+	ld	l, 01Ah
+	ld	a, (hl)
+	and	a, 000001110b
+	jr	z, GetVariableNumberLoop
+	cp	a, 4				; 00000010 (2) -> 3
+	jr	nz, +_				; 00000100 (4) -> 6
+	inc	a				; 00001000 (8) -> 9
+_:	inc	a
+GotVariableChar:
+	dec	(iy + X_POS)
+	ld	(de), a
+	add	a, '0'
+	inc	de
+	call	PrintChar
+	jr	DisplayEmptyCursor
+GetVariableNewNumber:
+	xor	a, a
+	ld	(de), a
+	ld	de, TempStringData
+	sbc	hl, hl
+_:	ld	a, (de)
+	or	a, a
+	jr	z, OverwriteVariable
+	add	hl, hl				; Num * 10 + new num
+	push	hl
+	pop	bc
+	add	hl, hl
+	add	hl, hl
+	add	hl, bc
+	ld	bc, 0
+	ld	c, a
+	add	hl, bc
+	inc	de
+	jr	-_
+OverwriteVariable:
+	push	hl
+	exx					; Restore BC and DE
+	pop	hl
+	ld	a, d				; Get current variable offset
+	add	a, c
+	ld	b, a
+	add	a, a
+	add	a, b
+	sub	a, 080h
+	ld	(VariableOffset2), a
+	ld	ix, ICE_VARIABLES
+VariableOffset2 = $+2
+	ld	(ix - 080h), hl
+	jp	PrintAllVariables
 	
 ; =======================================================================================
 ViewMemory:
@@ -578,12 +663,11 @@ GetSlotLoop:
 	ld	(iy + X_POS), 28
 GetSize_SMC = $+1
 	call	0
-	inc	hl
-	add	hl, de
-	or	a, a
-	sbc	hl, de
-	jr	z, SlotIsClosed
-	dec	hl
+	ld	d, h
+	ld	e, l
+	add	hl, hl
+	jr	c, SlotIsClosed
+	ex.s	de, hl
 	call	PrintInt
 	ld	(iy + X_POS), 5
 GetVATPtr_SMC = $+1
