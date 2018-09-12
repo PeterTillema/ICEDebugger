@@ -39,13 +39,14 @@
 	ret	c
 	call	_ChkInRAM
 	ex	de, hl
-	jr	nc, +_
+	jr	nc, DbgVarInRAM
 	ld	bc, 9
 	add	hl, bc
 	ld	c, (hl)
 	add	hl, bc
 	inc	hl
-_:	inc	hl
+DbgVarInRAM:
+	inc	hl
 	inc	hl
 	ld	(iy + DBG_PROG_START), hl	; HL points to the source program now
 	dec	hl
@@ -57,13 +58,14 @@ _:	inc	hl
 	call	_ChkInRAM
 	ex	de, hl
 	ld	bc, 0
-	jr	nc, +_
+	jr	nc, SrcVarInRAM
 	ld	c, 9
 	add	hl, bc
 	ld	c, (hl)
 	add	hl, bc
 	inc	hl
-_:	ld	c, (hl)				; Get size
+SrcVarInRAM:
+	ld	c, (hl)				; Get size
 	inc	hl
 	ld	b, (hl)
 	inc	hl
@@ -84,12 +86,13 @@ _:	ld	c, (hl)				; Get size
 	inc	hl
 	inc	b
 	dec	b
-	jr	z, +_
+	jr	z, NoVariablesSkip
 SkipVariableLoop0:
 	ld	c, 255				; Prevent decrementing B; a variable name won't be longer than 255 bytes
 	cpir
 	djnz	SkipVariableLoop0
-_:	ld	(iy + LINES_START), hl
+NoVariablesSkip:
+	ld	(iy + LINES_START), hl
 	ld	de, (hl)
 	inc	hl
 	inc	hl
@@ -143,6 +146,7 @@ DebuggerCode2:
 
 ; Backup registers and variables
 	di
+	ld	(tempSP), sp
 	push	af
 	push	bc
 	push	de
@@ -239,8 +243,7 @@ Quit:
 	
 ; =======================================================================================
 StepCode:
-	ld	hl, 24
-	add	hl, sp
+	ld	hl, (tempSP)
 	ld	de, (hl)
 	dec	de
 	dec	de
@@ -547,7 +550,8 @@ GetVariableNewNumber:
 	ld	(de), a
 	ld	de, TempStringData
 	sbc	hl, hl
-_:	ld	a, (de)
+GetNumberCharLoop:
+	ld	a, (de)
 	or	a, a
 	jr	z, OverwriteVariable
 	add	hl, hl				; Num * 10 + new num
@@ -560,7 +564,7 @@ _:	ld	a, (de)
 	ld	c, a
 	add	hl, bc
 	inc	de
-	jr	-_
+	jr	GetNumberCharLoop
 OverwriteVariable:
 	push	hl
 	exx					; Restore BC and DE
@@ -738,9 +742,7 @@ ViewBuffer:
 	
 ; =======================================================================================
 SafeExit:
-	ld	hl, 24
-	add	hl, sp
-	ld	sp, hl
+	ld	sp, (tempSP)
 _:	pop	hl
 	ld	de, ramStart
 	or	a, a
@@ -825,8 +827,7 @@ SkipLabelsLoop:
 GetLabelAddress:
 	cpir
 	ld	de, (hl)
-	ld	hl, 24				; 8 pushes/calls before return
-	add	hl, sp
+	ld	hl, (tempSP)
 	ld	(hl), de
 	jp	Quit
 NoLabelsFound:
