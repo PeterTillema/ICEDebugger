@@ -483,8 +483,7 @@ PrintVariableLoop:
 	ld	ix, ICE_VARIABLES
 VariableOffset = $+2
 	ld	hl, (ix - 080h)
-	call	ToString
-	call	PrintString
+	call	PrintInt
 	pop	hl
 	call	AdvanceLine
 	djnz	PrintVariableLoop
@@ -506,7 +505,7 @@ MemoryDrawLine:
 	ld	(iy + X_POS), 0
 	ld	a, 0F2h				; $
 	call	PrintChar
-	call	PrintUInt
+	call	PrintHexInt
 	inc	(iy + X_POS)
 	ld	b, 8
 MemoryDrawLineOfBytes:
@@ -587,8 +586,7 @@ GetSize_SMC = $+1
 	sbc	hl, de
 	jr	z, SlotIsClosed
 	dec	hl
-	call	ToString
-	call	PrintString
+	call	PrintInt
 	ld	(iy + X_POS), 5
 GetVATPtr_SMC = $+1
 	call	0
@@ -596,8 +594,7 @@ GetVATPtr_SMC = $+1
 	or	a, a
 	sbc	hl, hl
 	ld	l, a
-	call	ToString
-	call	PrintString
+	call	PrintInt
 	ld	(iy + X_POS), 10
 IsArchived_SMC = $+1
 	call	0
@@ -617,12 +614,11 @@ GetName_SMC = $+1
 	call	PrintChar
 GetDataPtr_SMC = $+1
 	call	0
-	call	PrintUInt
+	call	PrintHexInt
 	ld	(iy + X_POS), 34
 Tell_SMC = $+1
 	call	0
-	call	ToString
-	call	PrintString
+	call	PrintInt
 SlotIsClosed:
 	pop	bc
 	inc	c
@@ -786,8 +782,7 @@ SelectOption:
 ;     Zero flag set = [ENTER]
 ;     Zero flag reset = [CLEAR]
 ;   Carry flag reset:
-;     Zero flag reset = [UP]
-;     Zero flag set = [DOWN]
+;     Pressed either [UP] or [DOWN]
 	dec	e
 PrintCursor:
 	ld	a, c
@@ -844,29 +839,9 @@ PressedClear:
 	ret
 PressedUp:
 	dec	d
-	or	a, 1
 	ret
 PressedDown:
 	inc	d
-	cp	a, a
-	ret
-	
-ToString:
-	push	bc
-	push	de
-	ld	de, TempStringData + 8
-DivideLoop:
-	ld	a, 10
-	call	_DivHLByA
-	dec	de
-	add	hl, de
-	add	a, '0'
-	ld	(de), a
-	sbc	hl, de
-	jr	nz, DivideLoop
-	ex	de, hl
-	pop	de
-	pop	bc
 	ret
 	
 TempStringData:
@@ -903,6 +878,21 @@ AdvanceLine:
 	ld	(iy + Y_POS), a
 	ret
 	
+PrintInt:
+	push	de
+	ld	de, TempStringData + 8
+DivideLoop:
+	ld	a, 10
+	call	_DivHLByA
+	dec	de
+	add	hl, de
+	add	a, '0'
+	ld	(de), a
+	sbc	hl, de
+	jr	nz, DivideLoop
+	ex	de, hl
+	pop	de
+	
 PrintString:
 	ld	a, (hl)
 	or	a, a
@@ -911,7 +901,7 @@ PrintString:
 	call	PrintChar
 	jr	PrintString
 	
-PrintUInt:
+PrintHexInt:
 	call	_SetAToHLU
 	call	PrintByte
 	ld	a, h
