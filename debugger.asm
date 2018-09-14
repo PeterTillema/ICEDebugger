@@ -188,20 +188,12 @@ MainMenu:
 	ld	b, AMOUNT_OF_OPTIONS
 	ld	e, b
 	ld	hl, MainOptionsString
+	ld	(iy + Y_POS), 1
 	
 PrintOptionsLoop:
-	push	bc
-	ld	a, c
-	add	a, a
-	add	a, a
-	add	a, a
-	add	a, c
-	inc	a
 	ld	(iy + X_POS), 1
-	ld	(iy + Y_POS), a
 	call	PrintString
-	pop	bc
-	inc	c
+	call	AdvanceLine
 	djnz	PrintOptionsLoop
 	ld	d, b
 	ld	c, b
@@ -364,10 +356,10 @@ DontDisplayToken:
 	call	_IsA2ByteTok
 	inc	hl
 	dec	bc
-	jr	nz, +_
+	jr	nz, GetBASICTokenLoop
 	inc	hl
 	dec	bc
-_:	jr	GetBASICTokenLoop
+	jr	GetBASICTokenLoop
 AdvanceBASICLine:
 	dec	ixl
 	ld	a, d
@@ -446,10 +438,12 @@ ViewVariables:
 	jp	MainMenu
 _:	ld	d, a
 	ld	c, a
+	jr	DontClearVariablesScreen
 PrintAllVariables:
 	exx
 	call	ClearScreen
 	exx
+DontClearVariablesScreen:
 	ld	hl, (iy + VARIABLE_START)
 	ld	e, (hl)
 	inc	hl
@@ -469,7 +463,7 @@ _:	ld	(iy + Y_POS), 1
 	jr	z, PrintVariableLoop
 	push	bc
 	ld	b, d
-_:	ld	c, 255
+_:	ld	c, 255				; Every variable name < 255 characters, so B won't get overwritten with cpir
 	cpir
 	djnz	-_
 	pop	bc
@@ -503,6 +497,7 @@ _:	xor	a, a
 	ld	(iy + X_POS), 25
 	ld	de, TempStringData
 	ld	b, 8
+	ld	c, 255 - 4
 DisplayEmptyCursor:
 	ld	a, 0E4h				; _
 	call	PrintChar
@@ -515,33 +510,31 @@ GetVariableNumberLoop:
 	ld	a, (hl)
 	and	a, 000001111b
 	jr	z, Check258
-	cp	a, 4				; 00000001 (1) -> 0
-	jr	nz, +_				; 00000010 (2) -> 1
-	inc	a				; 00000100 (4) -> 4
-_:	dec	a				; 00001000 (8) -> 7
+	sub	a, 4				; A = A-(A!=4)
+	add	a, 255
+	sbc	a, c
 	jr	GotVariableChar
 Check258:
 	ld	l, 018h
 	ld	a, (hl)
 	and	a, 000001110b
 	jr	z, Check359
-	cp	a, 4				; 00000010 (2) -> 2
-	jr	nz, GotVariableChar		; 00000100 (4) -> 5
-	inc	a				; 00001000 (8) -> 8
+	add	a, c				; A = A+(A=4)
+	sub	a, 255
+	sbc	a, c
 	jr	GotVariableChar
 Check359:
 	ld	l, 01Ah
 	ld	a, (hl)
 	and	a, 000001110b
 	jr	z, GetVariableNumberLoop
-	cp	a, 4				; 00000010 (2) -> 3
-	jr	nz, +_				; 00000100 (4) -> 6
-	inc	a				; 00001000 (8) -> 9
-_:	inc	a
+	add	a, c				; A = A+1+(A!=4)
+	sub	a, 254
+	sbc	a, c
 GotVariableChar:
 	dec	(iy + X_POS)
-	ld	(de), a
 	add	a, '0'
+	ld	(de), a
 	inc	de
 	call	PrintChar
 	djnz	DisplayEmptyCursor
@@ -554,6 +547,7 @@ GetNumberCharLoop:
 	ld	a, (de)
 	or	a, a
 	jr	z, OverwriteVariable
+	sub	a, '0'
 	add	hl, hl				; Num * 10 + new num
 	push	hl
 	pop	bc
@@ -948,7 +942,6 @@ PressedEnter:
 	scf
 	ret
 PressedClear:
-	or	a, 1
 	scf
 	ret
 PressedUp:
