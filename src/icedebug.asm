@@ -19,11 +19,9 @@ include_library '../include/fileioc.asm'
 	
 SCREEN_START      := (usbArea and 0FFFFF8h) + 8			; Note: mask to 8 bytes!
 BREAKPOINTS_START := SCREEN_START + (lcdWidth * lcdHeight / 8)
-DEBUGGER_START    := saveSScreen + 21945 - 260 - 4000		; See src/main.h
 ICE_VARIABLES     := 0D13F56h					; See src/main.h
 AMOUNT_OF_OPTIONS := 11
 	
-; Here we actually start; the ICE program can check for these 3 bytes to make sure the debugger is loaded
 ; DE = compiled program name
 ; Return C if failure
 icedbg_setup:
@@ -667,7 +665,7 @@ GetSlotLoop:
 	pop	hl
 	call	PrintString
 	ld	(X_POS), 20
-	ld	a, '$'
+	ld	a, 0F2h
 	call	PrintChar
 	call	ti_GetDataPtr
 	call	PrintHexInt
@@ -835,10 +833,10 @@ InsertBreakpoint:
 	dec	hl
 	dec	hl
 	dec	hl
-	ld	de, DEBUGGER_START
+	ld	de, icedbg_open
 	ld	(hl), de
 	dec	hl
-	ld	(hl), 0CDh			; CALL DEBUGGER_START
+	ld	(hl), 0CDh			; CALL icedbg_open
 	ret
 	
 RestorePaletteUSB:
