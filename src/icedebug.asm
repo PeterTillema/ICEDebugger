@@ -1,8 +1,11 @@
 ;-------------------------------------------------------------------------------
 include '../include/library.inc'
+include '../include/include_library.inc'
 ;-------------------------------------------------------------------------------
 
 library 'ICEDEBUG', 4
+
+include_library '../include/fileioc.asm'
 
 ;-------------------------------------------------------------------------------
 ; no dependencies
@@ -636,7 +639,7 @@ GetSlotLoop:
 	ld	a, ':'
 	call	PrintChar
 	ld	(X_POS), 28
-	;call	ti_GetSize
+	call	ti_GetSize
 	ld	d, h
 	ld	e, l
 	add	hl, hl
@@ -644,14 +647,14 @@ GetSlotLoop:
 	ex.s	de, hl
 	call	PrintInt
 	ld	(X_POS), 5
-	;call	ti_GetVATPtr
+	call	ti_GetVATPtr
 	ld	a, (hl)
 	or	a, a
 	sbc	hl, hl
 	ld	l, a
 	call	PrintInt
 	ld	(X_POS), 10
-	;call	ti_IsArchived
+	call	ti_IsArchived
 	ld	a, l
 	or	a, a
 	jr	z, .notarchived
@@ -660,16 +663,16 @@ GetSlotLoop:
 .notarchived:
 	ld	hl, TempStringData
 	push	hl
-	;call	ti_GetName
+	call	ti_GetName
 	pop	hl
 	call	PrintString
 	ld	(X_POS), 20
 	ld	a, '$'
 	call	PrintChar
-	;call	ti_GetDataPtr
+	call	ti_GetDataPtr
 	call	PrintHexInt
 	ld	(X_POS), 34
-	;call	ti_Tell
+	call	ti_Tell
 	call	PrintInt
 SlotIsClosed:
 	pop	bc
