@@ -1,38 +1,31 @@
-#include "ti84pce.inc"
+;-------------------------------------------------------------------------------
+include '../include/library.inc'
+;-------------------------------------------------------------------------------
 
-#define VARIABLES cursorImage + 500		; Apparently the GRAPHX lib uses cursorImage to fill the screen
-#define PROG_SIZE              0
-#define PROG_START             3
-#define DBG_PROG_SIZE          6
-#define DBG_PROG_START         9
-#define PALETTE_ENTRIES_BACKUP 12
-#define INPUT_LINE             16
-#define X_POS                  19
-#define Y_POS                  20
-#define SLOT_FUNCTIONS_POINTER 21
-#define VARIABLE_START         24
-#define LINES_START            27
-#define STARTUP_BREAKPOINTS    30
-#define LABELS_START           33
-#define AMOUNT_OF_BREAKPOINTS  36
-#define DEBUG_CURRENT_LINE     39
-#define DEBUG_LINE_START       40
+library 'ICEDEBUG', 4
 
-#define SCREEN_START           (usbArea & 0FFFFF8h) + 8	; Note: mask to 8 bytes!
-#define BREAKPOINTS_START SCREEN_START + (lcdWidth * lcdHeight / 8)
-#define DEBUGGER_START         saveSScreen + 21945 - 260 - 4000		; See src/main.h
-#define ICE_VARIABLES          0D13F56h		; See src/main.h
-#define AMOUNT_OF_OPTIONS      9
+;-------------------------------------------------------------------------------
+; no dependencies
+;-------------------------------------------------------------------------------
 
-	.db	083h
-	cp	a, a				; Signify start of ICE Debugger
-	ret
+;-------------------------------------------------------------------------------
+; v1 functions
+;-------------------------------------------------------------------------------
+	export icedbg_setup
+	export icedbg_open
+	
+SCREEN_START      := (usbArea and 0FFFFF8h) + 8			; Note: mask to 8 bytes!
+BREAKPOINTS_START := SCREEN_START + (lcdWidth * lcdHeight / 8)
+DEBUGGER_START    := saveSScreen + 21945 - 260 - 4000		; See src/main.h
+ICE_VARIABLES     := 0D13F56h					; See src/main.h
+AMOUNT_OF_OPTIONS := 11
 	
 ; Here we actually start; the ICE program can check for these 3 bytes to make sure the debugger is loaded
 ; DE = compiled program name
 ; Return C if failure
+icedbg_setup:
 	di
-	ld	iy, VARIABLES
+	ld	iy, iy_base
 	ex	de, hl				; Input is DBG file
 	call	_Mov9ToOP1
 	call	_ChkFindSym			; Find program, must exists
@@ -48,7 +41,7 @@
 DbgVarInRAM:
 	inc	hl
 	inc	hl
-	ld	(iy + DBG_PROG_START), hl	; HL points to the source program now
+	ld	(DBG_PROG_START), hl	; HL points to the source program now
 	dec	hl
 	call	_Mov9ToOP1
 	ld	a, ProgObj
@@ -69,19 +62,15 @@ SrcVarInRAM:
 	inc	hl
 	ld	b, (hl)
 	inc	hl
-	ld	(iy + PROG_SIZE), bc		; Store pointers
-	ld	(iy + PROG_START), hl
-	ld	hl, (iy + DBG_PROG_START)
+	ld	(PROG_SIZE), bc		; Store pointers
+	ld	(PROG_START), hl
+	ld	hl, (DBG_PROG_START)
 	xor	a, a
-	ld	(iy + AMOUNT_OF_BREAKPOINTS), a
+	ld	(AMOUNT_OF_BREAKPOINTS), a
 	ld	c, a
 	ld	b, a
 	cpir
-	ld	(iy + SLOT_FUNCTIONS_POINTER), hl
-	inc	hl
-	inc	hl
-	inc	hl
-	ld	(iy + VARIABLE_START), hl
+	ld	(VARIABLE_START), hl
 	ld	b, (hl)				; Amount of variables
 	inc	hl
 	inc	b
@@ -92,7 +81,7 @@ SkipVariableLoop0:
 	cpir
 	djnz	SkipVariableLoop0
 NoVariablesSkip:
-	ld	(iy + LINES_START), hl
+	ld	(LINES_START), hl
 	ld	de, (hl)
 	inc	hl
 	inc	hl
@@ -104,20 +93,14 @@ NoVariablesSkip:
 	add	hl, de
 	add	hl, de
 	inc	hl				; Skip ending $FF byte
-	ld	(iy + STARTUP_BREAKPOINTS), hl
+	ld	(STARTUP_BREAKPOINTS), hl
 	ld	c, (hl)
 	ld	b, 3
 	mlt	bc
 	inc	hl
 	add	hl, bc
-	ld	(iy + LABELS_START), hl
-	ld	hl, (windowHookPtr)		; Copy to safeRAM
-	ld	de, DebuggerCode1
-	add	hl, de
-	ld	de, DebuggerCode2
-	ld	bc, DebuggerCodeEnd - DebuggerCode2
-	ldir
-	ld	hl, (iy + STARTUP_BREAKPOINTS)
+	ld	(LABELS_START), hl
+	ld	hl, (STARTUP_BREAKPOINTS)
 	ld	a, (hl)
 	or	a, a
 	ret	z
@@ -137,10 +120,8 @@ InsertBreakpointLoop:
 	jr	nz, InsertBreakpointLoop
 	pop	ix
 	ret
-
-DebuggerCode1:
-.org DEBUGGER_START
-DebuggerCode2:
+	
+icedbg_open:
 ; This is the breakpoint handler
 ; See breakpoints.txt for some more information
 
@@ -158,9 +139,9 @@ DebuggerCode2:
 	push	hl
 	push	ix
 	
-	ld	iy, VARIABLES
+	ld	iy, iy_base
 	ld	hl, mpLcdPalette
-	lea	de, iy + PALETTE_ENTRIES_BACKUP
+	lea	de, PALETTE_ENTRIES_BACKUP
 	ld	bc, 4
 	ldir
 	dec	c
@@ -188,10 +169,10 @@ MainMenu:
 	ld	b, AMOUNT_OF_OPTIONS
 	ld	e, b
 	ld	hl, MainOptionsString
-	ld	(iy + Y_POS), 1
+	ld	(Y_POS), 1
 	
 PrintOptionsLoop:
-	ld	(iy + X_POS), 1
+	ld	(X_POS), 1
 	call	PrintString
 	call	AdvanceLine
 	djnz	PrintOptionsLoop
@@ -208,6 +189,10 @@ PrintOptionsLoop:
 	jp	z, ViewVariables
 	dec	a
 	jp	z, ViewMemory
+	dec	a
+	jp	z, ViewStrings
+	dec	a
+	jp	z, ViewLists
 	dec	a
 	jp	z, ViewSlots
 	dec	a
@@ -242,11 +227,11 @@ StepCode:
 	dec	de
 	dec	de					; DE = call pointer
 	
-	ld	hl, (iy + STARTUP_BREAKPOINTS)
+	ld	hl, (STARTUP_BREAKPOINTS)
 	dec	hl
 	ld	bc, -6
 	exx
-	ld	hl, (iy + LINES_START)
+	ld	hl, (LINES_START)
 	ld	hl, (hl)
 CheckLineLoop:
 	exx
@@ -259,9 +244,9 @@ CheckLineLoop:
 	exx
 	dec	hl
 	jr	nc, CheckLineLoop
-	ld	(iy + DEBUG_CURRENT_LINE), hl
+	ld	(DEBUG_CURRENT_LINE), hl
 	ex	de, hl					; DE = line_numer
-	ld	hl, (iy + LINES_START)
+	ld	hl, (LINES_START)
 	ld	hl, (hl)				; HL = amount_of_lines
 	
 ; If current_line <= 13 or amount_of_lines <= 25
@@ -319,11 +304,11 @@ DoDisplayLines:
 ; DE = amount of lines to skip
 ; IXL = amount of lines before active line
 	ld	a, 1
-	ld	hl, (iy + PROG_START)
-	ld	bc, (iy + PROG_SIZE)
+	ld	hl, (PROG_START)
+	ld	bc, (PROG_SIZE)
 GetBASICTokenLoopDispColon:
-	ld	(iy + Y_POS), a
-	ld	(iy + X_POS), 1
+	ld	(Y_POS), a
+	ld	(X_POS), 1
 	ld	a, d
 	or	a, e
 	jr	nz, GetBASICTokenLoop
@@ -339,7 +324,7 @@ GetBASICTokenLoop:
 	ld	a, d					; Out of screen
 	or	a, e
 	jr	nz, DontDisplayToken
-	ld	a, (iy + X_POS)
+	ld	a, (X_POS)
 	cp	a, 40
 	jr	z, DontDisplayToken
 	push	bc
@@ -364,11 +349,12 @@ AdvanceBASICLine:
 	dec	ixl
 	ld	a, d
 	or	a, e
-	ld	a, (iy + Y_POS)
-	jr	nz, +_
+	ld	a, (Y_POS)
+	jr	nz, AdvanceYPos
 	add	a, 9
 	inc	de
-_:	dec	de
+AdvanceYPos:
+	dec	de
 	inc	hl
 	dec	bc
 	cp	a, 229 - 7
@@ -378,7 +364,8 @@ BASICProgramDone:
 	ld	hl, SCREEN_START + (228 * lcdWidth / 8)
 	ld	de, 0FFFFFFh
 	ld	b, 5
-_:	ld	(hl), de
+FillBlackRowLoop:
+	ld	(hl), de
 	inc	hl
 	inc	hl
 	inc	hl
@@ -390,12 +377,13 @@ _:	ld	(hl), de
 	inc	hl
 	ld	(hl), e
 	inc	hl
-	djnz	-_
-	ld	(iy + Y_POS), 231
-	ld	(iy + X_POS), 0
+	djnz	FillBlackRowLoop
+	ld	(Y_POS), 231
+	ld	(X_POS), 0
 	ld	hl, StepString
 	call	PrintString
-_:	call	GetKeyAnyFast
+BASICDebuggerKeyWait:
+	call	GetKeyAnyFast
 	ld	l, 012h
 	ld	a, (hl)
 	rra
@@ -413,7 +401,7 @@ _:	call	GetKeyAnyFast
 	jr	nz, BASICDebuggerSwitchBreakpoint
 	bit	6, (hl)
 	jr	nz, BASICDebuggerQuit
-	jr	-_
+	jr	BASICDebuggerKeyWait
 	
 BASICDebuggerStepOut:
 BASICDebuggerStepNext:
@@ -430,13 +418,14 @@ ViewVariables:
 ; C = currently selected variable
 ; D = start offset
 ; E = amount of variables
-	ld	hl, (iy + VARIABLE_START)
+	ld	hl, (VARIABLE_START)
 	xor	a, a
 	cp	a, (hl)
-	jr	nz, +_
+	jr	nz, FoundVariables
 	call	GetKeyAnyFast
 	jp	MainMenu
-_:	ld	d, a
+FoundVariables:
+	ld	d, a
 	ld	c, a
 	jr	DontClearVariablesScreen
 PrintAllVariables:
@@ -444,15 +433,16 @@ PrintAllVariables:
 	call	ClearScreen
 	exx
 DontClearVariablesScreen:
-	ld	hl, (iy + VARIABLE_START)
+	ld	hl, (VARIABLE_START)
 	ld	e, (hl)
 	inc	hl
 	ld	b, 26				; Get amount of variables to display
 	ld	a, b
 	cp	a, e
-	jr	c, +_
+	jr	c, MoreThan26Variables
 	ld	b, e
-_:	ld	(iy + Y_POS), 1
+MoreThan26Variables:
+	ld	(Y_POS), 1
 	ld	a, d
 	add	a, a
 	add	a, d
@@ -463,16 +453,17 @@ _:	ld	(iy + Y_POS), 1
 	jr	z, PrintVariableLoop
 	push	bc
 	ld	b, d
-_:	ld	c, 255				; Every variable name < 255 characters, so B won't get overwritten with cpir
+.loop:
+	ld	c, 255				; Every variable name < 255 characters, so B won't get overwritten with cpir
 	cpir
-	djnz	-_
+	djnz	.loop
 	pop	bc
 PrintVariableLoop:
-	ld	(iy + X_POS), 1
+	ld	(X_POS), 1
 	call	PrintString
 	ld	a, ':'
 	call	PrintChar
-	ld	(iy + X_POS), 25
+	ld	(X_POS), 25
 	push	hl
 	ld	a, (VariableOffset)
 	add	a, 3
@@ -489,12 +480,13 @@ VariableOffset = $+2
 	jp	nz, MainMenu
 ; Edit the variable
 	exx					; Save BC and DE for later
-	ld	(iy + X_POS), 25
+	ld	(X_POS), 25
 	ld	b, 8
-_:	xor	a, a
+.loop:
+	xor	a, a
 	call	PrintChar
-	djnz	-_
-	ld	(iy + X_POS), 25
+	djnz	.loop
+	ld	(X_POS), 25
 	ld	de, TempStringData
 	ld	b, 8
 	ld	c, 255 - 4
@@ -532,7 +524,7 @@ Check359:
 	sub	a, 254
 	sbc	a, c
 GotVariableChar:
-	dec	(iy + X_POS)
+	dec	(X_POS)
 	add	a, '0'
 	ld	(de), a
 	inc	de
@@ -579,22 +571,22 @@ VariableOffset2 = $+2
 ViewMemory:
 	ld	hl, ramStart
 	ld	c, 24
-	ld	(iy + Y_POS), 0
+	ld	(Y_POS), 0
 MemoryDrawLine:
-	ld	a, (iy + Y_POS)
+	ld	a, (Y_POS)
 	add	a, 10
-	ld	(iy + Y_POS), a
-	ld	(iy + X_POS), 0
+	ld	(Y_POS), a
+	ld	(X_POS), 0
 	ld	a, 0F2h				; $
 	call	PrintChar
 	call	PrintHexInt
-	inc	(iy + X_POS)
+	inc	(X_POS)
 	ld	b, 8
 MemoryDrawLineOfBytes:
 	ld	a, (hl)
 	inc	hl
 	call	PrintByte
-	inc	(iy + X_POS)
+	inc	(X_POS)
 	djnz	MemoryDrawLineOfBytes
 	ld	de, -8
 	add	hl, de
@@ -603,12 +595,14 @@ MemoryDrawLineOfChars:
 	ld	a, (hl)
 	inc	hl
 	or	a, a
-	jr	nz, +_
+	jr	nz, .charnonzero
 	ld	a, '.'
-_:	cp	a, 0F4h
-	jr	c, +_
+.charnonzero:
+	cp	a, 0F4h
+	jr	c, .chartoolarge
 	ld	a, '.'
-_:	call	PrintChar
+.chartoolarge:
+	call	PrintChar
 	djnz	MemoryDrawLineOfChars
 	dec	c
 	jr	nz, MemoryDrawLine
@@ -616,96 +610,72 @@ _:	call	PrintChar
 	jp	MainMenu
 	
 ; =======================================================================================
-ViewSlots:
-	ld	hl, (iy + SLOT_FUNCTIONS_POINTER)
-	ld	hl, (hl)			; Pointer to FILEIOC functions
-	add	hl, de
-	or	a, a
-	sbc	hl, de
-	jp	z, AllSlotsClosed
-	ld	bc, 4
-	inc	hl
-	ld	de, (hl)			; IsArchived
-	ld	(IsArchived_SMC), de
-	add	hl, bc
-	ld	de, (hl)			; Tell
-	ld	(Tell_SMC), de
-	add	hl, bc
-	ld	de, (hl)			; GetSize
-	ld	(GetSize_SMC), de
-	add	hl, bc
-	ld	de, (hl)			; GetDataPtr
-	ld	(GetDataPtr_SMC), de
-	add	hl, bc
-	ld	de, (hl)			; GetVATPtr
-	ld	(GetVATPtr_SMC), de
-	add	hl, bc
-	ld	de, (hl)			; GetName
-	ld	(GetName_SMC), de
+ViewStrings:
+	jp	MainMenu
+
+; =======================================================================================
+ViewLists:
+	jp	MainMenu
 	
-	ld	(iy + X_POS), 0
-	ld	(iy + Y_POS), 0
+; =======================================================================================
+ViewSlots:
+	ld	(X_POS), 0
+	ld	(Y_POS), 0
 	ld	hl, SlotOptionsString
 	call	PrintString
 	ld	b, 5
 	ld	c, 1
-	inc	(iy + Y_POS)
+	inc	(Y_POS)
 GetSlotLoop:
 	push	bc
 	call	AdvanceLine
-	ld	(iy + X_POS), 0
+	ld	(X_POS), 0
 	ld	a, c
 	add	a, '0'
 	call	PrintChar
 	ld	a, ':'
 	call	PrintChar
-	ld	(iy + X_POS), 28
-GetSize_SMC = $+1
-	call	0
+	ld	(X_POS), 28
+	;call	ti_GetSize
 	ld	d, h
 	ld	e, l
 	add	hl, hl
 	jr	c, SlotIsClosed
 	ex.s	de, hl
 	call	PrintInt
-	ld	(iy + X_POS), 5
-GetVATPtr_SMC = $+1
-	call	0
+	ld	(X_POS), 5
+	;call	ti_GetVATPtr
 	ld	a, (hl)
 	or	a, a
 	sbc	hl, hl
 	ld	l, a
 	call	PrintInt
-	ld	(iy + X_POS), 10
-IsArchived_SMC = $+1
-	call	0
+	ld	(X_POS), 10
+	;call	ti_IsArchived
 	ld	a, l
 	or	a, a
-	jr	z, +_
+	jr	z, .notarchived
 	ld	a, '*'
 	call	PrintChar
-_:	ld	hl, TempStringData
+.notarchived:
+	ld	hl, TempStringData
 	push	hl
-GetName_SMC = $+1
-	call	0
+	;call	ti_GetName
 	pop	hl
 	call	PrintString
-	ld	(iy + X_POS), 20
+	ld	(X_POS), 20
 	ld	a, '$'
 	call	PrintChar
-GetDataPtr_SMC = $+1
-	call	0
+	;call	ti_GetDataPtr
 	call	PrintHexInt
-	ld	(iy + X_POS), 34
-Tell_SMC = $+1
-	call	0
+	ld	(X_POS), 34
+	;call	ti_Tell
 	call	PrintInt
 SlotIsClosed:
 	pop	bc
 	inc	c
 	dec	b
 	jp	nz, GetSlotLoop
-AllSlotsClosed:
 	call	GetKeyAnyFast
 	jp	MainMenu
 	
@@ -737,11 +707,12 @@ ViewBuffer:
 ; =======================================================================================
 SafeExit:
 	ld	sp, (tempSP)
-_:	pop	hl
+.pop:
+	pop	hl
 	ld	de, ramStart
 	or	a, a
 	sbc	hl, de
-	jr	nc, -_
+	jr	nc, .pop
 	add	hl, de
 	push	hl
 	ld	a, lcdBpp16
@@ -759,7 +730,7 @@ JumpLabel:
 ; C = currently selected label
 ; D = start offset
 ; E = amount of variables
-	ld	hl, (iy + LABELS_START)
+	ld	hl, (LABELS_START)
 	xor	a, a
 	cp	a, (hl)
 	jr	z, NoLabelsFound
@@ -769,29 +740,31 @@ PrintAllLabels:
 	exx
 	call	ClearScreen
 	exx
-	ld	hl, (iy + LABELS_START)
+	ld	hl, (LABELS_START)
 	ld	e, (hl)
 	inc	hl
 	ld	b, 26
 	ld	a, b
 	cp	a, e
-	jr	c, +_
+	jr	c, MoreThan26Labels
 	ld	b, e
-_:	ld	(iy + Y_POS), 1
+MoreThan26Labels:
+	ld	(Y_POS), 1
 	xor	a, a
 	cp	a, d
 	jr	z, PrintLabelLoop
 	push	bc
 	ld	b, d
-_:	ld	c, 255
+.skip:
+	ld	c, 255
 	cpir
 	inc	hl
 	inc	hl
 	inc	hl
-	djnz	-_
+	djnz	.skip
 	pop	bc
 PrintLabelLoop:
-	ld	(iy + X_POS), 1
+	ld	(X_POS), 1
 	call	PrintString
 	inc	hl				; Skip label address
 	inc	hl
@@ -802,7 +775,7 @@ PrintLabelLoop:
 	jr	nc, PrintAllLabels
 	jp	nz, MainMenu
 ; Get label address
-	ld	hl, (iy + LABELS_START)
+	ld	hl, (LABELS_START)
 	inc	hl
 	ld	a, d
 	add	a, c
@@ -834,13 +807,13 @@ NoLabelsFound:
 
 InsertBreakpoint:
 ; HL = line number
-	ld	c, (iy + AMOUNT_OF_BREAKPOINTS)
+	ld	c, (AMOUNT_OF_BREAKPOINTS)
 	ld	b, 10
 	mlt	bc
 	ld	ix, BREAKPOINTS_START
 	add	ix, bc
 	ld	(ix), hl			; Line number
-	ld	de, (iy + LINES_START)
+	ld	de, (LINES_START)
 	inc	de
 	inc	de
 	inc	de
@@ -868,7 +841,7 @@ InsertBreakpoint:
 RestorePaletteUSB:
 ; Restore palette, usb area, variables and registers
 	ld	de, mpLcdPalette
-	lea	hl, iy + PALETTE_ENTRIES_BACKUP
+	lea	hl, PALETTE_ENTRIES_BACKUP
 	ld	bc, 4
 	ldir
 	ld	hl, usbArea
@@ -899,11 +872,11 @@ PrintCursor:
 	add	a, a
 	add	a, c
 	inc	a
-	ld	(iy + Y_POS), a
-	ld	(iy + X_POS), 0
+	ld	(Y_POS), a
+	ld	(X_POS), 0
 	ld	a, '>'
 	call	PrintChar
-	dec	(iy + X_POS)
+	dec	(X_POS)
 CheckKeyLoop:
 	call	GetKeyAnyFast
 	ld	l, 01Ch
@@ -952,7 +925,7 @@ PressedDown:
 	ret
 	
 TempStringData:
-	.db	0, 0, 0, 0, 0, 0, 0, 0, 0
+	rb	9
 	
 ClearScreen:
 	ld	hl, SCREEN_START
@@ -965,24 +938,26 @@ ClearScreen:
 	ret
 	
 GetKeyAnyFast:
-	ld	hl, mpKeyRange + (keyModeAny << 8)
+	ld	hl, mpKeyRange + (keyModeAny shl 8)
 	ld	(hl), h
 	ld	l, keyIntStat
 	xor	a, a
 	ld	(hl), keyIntKeyPress
-_:	bit	bKeyIntKeyPress, (hl)
-	jr	z, -_
+.wait1:
+	bit	bKeyIntKeyPress, (hl)
+	jr	z, .wait1
 	ld	l, a
 	ld	(hl), keyModeScanOnce
-_:	cp	a, (hl)
-	jr	nz, -_
+.wait2:
+	cp	a, (hl)
+	jr	nz, .wait2
 	ld	a, 20
 	jp	_DelayTenTimesAms
 	
 AdvanceLine:
-	ld	a, (iy + Y_POS)
+	ld	a, (Y_POS)
 	add	a, 9
-	ld	(iy + Y_POS), a
+	ld	(Y_POS), a
 	ret
 	
 PrintInt:
@@ -1023,37 +998,39 @@ PrintByte:
 	rra
 	and	a, 00Fh
 	cp	a, 10
-	jr	c, +_
+	jr	c, .charisnum1
 	add	a, 'A' - '9' - 1
-_:	add	a, '0'
+.charisnum1:
+	add	a, '0'
 	call	PrintChar
 	ld	a, d
 	and	a, 00Fh
 	cp	a, 10
-	jr	c, +_
+	jr	c, .charisnum2
 	add	a, 'A' - '9' - 1
-_:	add	a, '0'
+.charisnum2:
+	add	a, '0'
 	
 PrintChar:
 	push	hl
 	push	de
 	push	bc
 	ld	c, a
-	ld	a, (iy + X_POS)
+	ld	a, (X_POS)
 	cp	a, 40
 	jr	z, DontDisplayChar
 	or	a, a
 	sbc	hl, hl
 	ld	l, a
-	inc	(iy + X_POS)
-	ld	e, (iy + Y_POS)
+	inc	(X_POS)
+	ld	e, (Y_POS)
 	ld	d, lcdWidth / 8
 	mlt	de
 	add	hl, de
 	ld	de, SCREEN_START
 	add	hl, de
 	ex	de, hl
-	ld	hl, _DefaultTextData
+	ld	hl, _DefaultTIFontData
 	ld	b, 8
 	ld	ixh, b
 	mlt	bc
@@ -1063,9 +1040,10 @@ PutCharLoop:
 	ld	a, ixl
 	or	a, a
 	ld	a, (hl)
-	jr	nz, +_
+	jr	nz, .notinvert
 	cpl
-_:	ld	(de), a
+.notinvert:
+	ld	(de), a
 	inc	de
 	inc	hl
 	ex	de, hl
@@ -1080,24 +1058,43 @@ DontDisplayChar:
 	ret
 	
 MainOptionsString:
-	.db	"Step through code", 0
-	.db	"View/edit variables", 0
-	.db	"View/edit memory", 0
-	.db	"View opened slots", 0
-	.db	"View screen", 0
-	.db	"View buffer", 0
-	.db	"Jump to label", 0
-	.db	"Save exit program", 0
-	.db	"Quit", 0
+	db	"Step through code", 0
+	db	"View/edit variables", 0
+	db	"View/edit memory", 0
+	db	"View OS strings", 0
+	db	"View OS lists", 0
+	db	"View opened slots", 0
+	db	"View screen", 0
+	db	"View buffer", 0
+	db	"Jump to label", 0
+	db	"Save exit program", 0
+	db	"Quit", 0
 StepString:
-	.db	"Step  StepOver   StepNext  StepOut  Quit", 0
+	db	"Step  StepOver   StepNext  StepOut  Quit", 0
 SlotOptionsString:
-	.db	"Slot Type Name      DataPtr Size  Offset", 0
+	db	"Slot Type Name      DataPtr Size  Offset", 0
 
-_DefaultTextData:
+_DefaultTIFontData:
 ; To get the font data, load font.pf into 8x8 ROM PixelFont Editor, export it as an assembly include file,
 ; and replace the regex "0x(..)" with "0\1h" to make it spasm-compatible
-#include "font.asm"
-DebuggerCodeEnd:
+include 'font.asm'
 
-.echo $ - DebuggerCode2
+virtual at iy
+	PROG_SIZE:			dl 0
+	PROG_START:			dl 0
+	DBG_PROG_SIZE:			dl 0
+	DBG_PROG_START:			dl 0
+	PALETTE_ENTRIES_BACKUP:		rb 4
+	INPUT_LINE:			dl 0
+	X_POS:				db 0
+	Y_POS:				db 0
+	VARIABLE_START:			dl 0
+	LINES_START:			dl 0
+	STARTUP_BREAKPOINTS:		dl 0
+	LABELS_START:			dl 0
+	AMOUNT_OF_BREAKPOINTS:		dl 0
+	DEBUG_CURRENT_LINE:		dl 0
+	DEBUG_LINE_START:		dl 0
+	load iy_data: $ - $$ from $$
+end virtual
+iy_base db iy_data

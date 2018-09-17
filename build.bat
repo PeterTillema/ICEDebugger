@@ -1,2 +1,2 @@
-spasm -E debugger.asm ICEDEBUG.8xv
+fasmg src/icedebug.asm ICEDEBUG.8xv
 pause

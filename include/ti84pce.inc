@@ -1,3 +1,5 @@
+;TI-84 Plus CE Include File
+
 ;Various Parts Contributed by
 ;- BrandonW
 ;- calc84
@@ -17,7 +19,6 @@
 #define EQU .equ
 #define end .end
 #define END .end
-#define db  .db
 
 ; Hardware Defines
 ;------------------------------
@@ -2529,6 +2530,9 @@ curCell			equ 0D0016Eh            ; selected list cell
 
 SmallEditCancelParse	equ 0D001A4h
 
+curRowBackup		equ 0D0033Ch		; backup of curRow
+shiftFlagsLocBackup	equ 0D00358h		; backup of shiftFlagsLoc
+appFlagsLocBackup	equ 0D00366h		; backup of appFlagsLoc
 penRowBackup		equ 0D003E3h		; backup of penRow
 mathprintBackup		equ 0D003E6h		; backup of mathprint flags
 winLeftEdgeBackup	equ 0D003D2h		; backup of winLeftEdge
@@ -2788,6 +2792,8 @@ DeltaX			equ 0D01FAEh
 DeltaY			equ 0D01FB7h
 TraceStep		equ 0D0203Dh
 
+TblStart		equ 0D02267h
+DeltaTbl		equ 0D02270h
 Plot1MarkType		equ 0D0227Eh
 Plot1List1		equ 0D0227Fh
 Plot1List2		equ 0D02284h
@@ -3001,11 +3007,6 @@ TempOP2ToOP6		equ 0D02B39h ; 55 bytes where OP2 to OP6 are temporary saved
 
 gCurYLoc		equ 0D02FD6h ; current y pixel location for C functions
 
-spinnerCount		equ 0D17744h ; when recieving an OS or data transfers, used as a counter for which character to draw
-
-
-InsertLblGoto   equ 0D210FAh
-
 ;safeRAM Locations
 ;---------------------------------------------
 ;appData		equ 0D00429h ; 256 bytes
@@ -3018,6 +3019,8 @@ plotSScreen		equ 0D09466h ; 21945 bytes	; Set GraphDraw Flag to redraw graph if 
 saveSScreen		equ 0D0EA1Fh ; 21945 bytes	; Set GraphDraw Flag to redraw graph if used
 cursorImage		equ 0E30800h ; 1020 bytes
 
+;semiSafeRAM Locations
+;---------------------------------------------
 usbArea			equ 0D13FD8h ; 14306 bytes used for usb, probably need to disable timer3/usb interrupts to use
 usbInited		equ 0D177B7h ; zero this byte while using usbArea and to reset the usb stack when interrupts are re-enabled
 heapBot			equ 0D1887Ch ; 1024 bytes used for flash ram routines, rest used rarely
@@ -3025,11 +3028,6 @@ ramCodeTop		equ 0D18C7Ch
 heapTop			equ 0D1987Ch
 stackBot		equ 0D1987Eh
 stackTop		equ 0D1A87Eh
-
-;semiSafeRAM Locations
-;---------------------------------------------
-tempStr			equ 0D17731h ; unknown size
-ramCode			equ 0D18C7Ch ; 1023 bytes       ; used by the bootcode when working with flash
 
 ;RAM Equates Continued
 ;---------------------------------------------
@@ -3089,12 +3087,12 @@ mpUsbInt		equ mpUsbRange + usbInt
 usbFrIdx		equ 001Ch
 pUsbFrIdx		equ pUsbRange + usbFrIdx
 mpUsbFrIdx		equ mpUsbRange + usbFrIdx
-usbPeriodicListBase	equ 0020h
+usbPeriodicListBase	equ 0024h
 pUsbPeriodicListBase	equ pUsbRange + usbPeriodicListBase
 mpUsbPeriodicListBase	equ mpUsbRange + usbPeriodicListBase
-usbAsyncListAddr	equ 0024h
+usbAsyncListAddr	equ 0028h
 pUsbAsyncListAddr	equ pUsbRange + usbAsyncListAddr
-mpAsyncListAddr		equ mpUsbRange + usbAsyncListAddr
+mpUsbAsyncListAddr	equ mpUsbRange + usbAsyncListAddr
 usbPortSC		equ 0030h
 pUsbPortSC		equ pUsbRange + usbPortSC
 mpUsbPortSC		equ mpUsbRange + usbPortSC
@@ -3354,7 +3352,7 @@ lcdPwr			equ 800h
 lcdIntVSync		equ 0000h
 lcdIntBack		equ 1000h
 lcdIntActiveVideo	equ 2000h
-lcdIntFront		equ 4000h
+lcdIntFront		equ 3000h
 lcdWatermark		equ 10000h
 lcdNormalMode		equ lcdPwr | lcdBgr | lcdBpp16
 
@@ -3628,7 +3626,7 @@ keyModeScan		equ 3
 pBlLevel		equ 0B024h
 mpBlLevel		equ 0F60024h
 
-;Character Font Equates  
+;Character Font Equates
 ;-------------------------------------
 LrecurN			equ 001h
 LrecurU			equ 002h
@@ -4556,7 +4554,7 @@ kSelectA		equ kE2BT+147
 kZFitA			equ kE2BT+148
 kE2BT_End		equ kZFitA
 
-;More 2 Byte Keys 
+;More 2 Byte Keys
 ;-------------------------------------
 kE2BT2			equ 00h
 kGDB1			equ kE2BT2
@@ -5111,7 +5109,7 @@ tFact			equ tPost ;2Dh '!'
 tCubicR			equ 2Eh
 tQuartR			equ 2Fh
 
-;Number Tokens 
+;Number Tokens
 ;---------------------------------------
 NUMS			equ 30h
 ;
@@ -5250,6 +5248,15 @@ tBorderColor	equ	6Ch
 tAsm84CeCmp	equ	07Bh
 tAsm84CePrgm	equ	07Ah
 
+; OS 5.2+ only
+tLEFT           equ     92h
+tCENTER         equ     93h
+tRIGHT          equ     94h
+tInvBinom       equ     95h
+tWait           equ     96h
+tToString       equ     97h
+tEval           equ     98h
+
 ;These Var Tokens Are 1st Of A Double Token
 ;-----------------------------------------------
 
@@ -5380,7 +5387,7 @@ tDrInv			equ GRCMDS+36 ;A8h 'DrInv_'
 tDrawF			equ GRCMDS+37 ;A9h 'DrawF_'
 tVarStrng		equ 0AAh
 
-;Functions with No Arguments								
+;Functions with No Arguments
 ;--------------------------------------------------
 NOARG			equ 0ABh
 tRand			equ NOARG ;ABh 'rand'
@@ -5949,7 +5956,7 @@ tLcapIAcute		equ 0CDh
 tGarbagec		equ 0CEh
 LastToken		equ 0CEh ;tLAST TOKEN IN THIS VERSION...
 
-;Data Type Equates												
+;Data Type Equates
 ;---------------------------------------------------------------------
 RealObj			equ 0
 ListObj			equ 1
@@ -5976,7 +5983,7 @@ AppVarObj		equ 15h	;application variable
 TempProgObj		equ 16h ;program, home deletes when finished
 GroupObj		equ 17h ;group.
 
-;System Error Codes												
+;System Error Codes
 ;-----------------------------------------------------------
 E_EDITF			equ 7 ;allow re-entering application
 E_EDIT			equ 1<<E_EDITF
@@ -6129,7 +6136,7 @@ E_MS			equ E_SS + FPLEN
 ;System Flags
 ;----------------------------------------------------------------------
 ioDelFlag		equ 0h
-inDelete		equ 0		;1 = DELETE SCREEN 
+inDelete		equ 0		;1 = DELETE SCREEN
 
 trigFlags		equ 0h		;Trigonometry mode settings
 trigDeg			equ 2		;1 = degrees, 0=radians
@@ -6435,7 +6442,7 @@ silentLinkHookActive	equ 7		;1 = silent link hook active
 hookflags5		equ 3Ah
 usbActivityHookActive	equ 0		;1 = USB activity hook active
 ;----------------------------------------------------------------------
-plotFlag3		equ 3Ch  
+plotFlag3		equ 3Ch
 bufferOnly		equ 0
 useFastCirc		equ 4
 ;----------------------------------------------------------------------
