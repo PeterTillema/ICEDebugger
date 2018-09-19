@@ -5,10 +5,8 @@ include '../include/include_library.inc'
 
 library 'ICEDEBUG', 4
 
-include_library '../include/fileioc.asm'
-
 ;-------------------------------------------------------------------------------
-; no dependencies
+include_library '../include/fileioc.asm'
 ;-------------------------------------------------------------------------------
 
 ;-------------------------------------------------------------------------------
@@ -17,10 +15,17 @@ include_library '../include/fileioc.asm'
 	export icedbg_setup
 	export icedbg_open
 	
-SCREEN_START      := (usbArea and 0FFFFF8h) + 8			; Note: mask to 8 bytes!
-BREAKPOINTS_START := SCREEN_START + (lcdWidth * lcdHeight / 8)
-ICE_VARIABLES     := 0D13F56h					; See src/main.h
-AMOUNT_OF_OPTIONS := 11
+SCREEN_START       := (usbArea and 0FFFFF8h) + 8			; Note: mask to 8 bytes!
+ICE_VARIABLES      := 0D13F56h						; See src/main.h
+AMOUNT_OF_OPTIONS  := 11
+
+BREAKPOINT_SIZE    := 11
+BREAKPOINT_TYPE    := 0
+BREAKPOINT_TYPE_FIXED  := 0
+BREAKPOINT_TYPE_TEMP   := 1
+BREAKPOINT_LINE    := 1
+BREAKPOINT_ADDRESS := 4
+BREAKPOINT_CODE    := 7
 	
 ; DE = compiled program name
 ; Return C if failure
@@ -51,7 +56,9 @@ DbgVarInRAM:
 	ret	c
 	call	_ChkInRAM
 	ex	de, hl
-	ld	bc, 0
+	ld	bc, -1
+	ld	(RESTORE_BREAKPOINT_LINE), bc
+	inc	bc
 	jr	nc, SrcVarInRAM
 	ld	c, 9
 	add	hl, bc
@@ -63,7 +70,7 @@ SrcVarInRAM:
 	inc	hl
 	ld	b, (hl)
 	inc	hl
-	ld	(PROG_SIZE), bc		; Store pointers
+	ld	(PROG_SIZE), bc			; Store pointers
 	ld	(PROG_START), hl
 	ld	hl, (DBG_PROG_START)
 	xor	a, a
@@ -82,6 +89,7 @@ SkipVariableLoop0:
 	cpir
 	djnz	SkipVariableLoop0
 NoVariablesSkip:
+	ld	(STEP_MODE), b
 	ld	(LINES_START), hl
 	ld	de, (hl)
 	inc	hl
@@ -93,7 +101,6 @@ NoVariablesSkip:
 	add	hl, de
 	add	hl, de
 	add	hl, de
-	inc	hl				; Skip ending $FF byte
 	ld	(STARTUP_BREAKPOINTS), hl
 	ld	c, (hl)
 	ld	b, 3
@@ -111,7 +118,7 @@ InsertBreakpointLoop:
 	push	hl
 	ex	af, af'
 	ld	hl, (hl)
-	call	InsertBreakpoint
+	call	InsertFixedBreakpointAtLine
 	ex	af, af'
 	pop	hl
 	inc	hl
@@ -155,15 +162,44 @@ icedbg_open:
 	dec	hl
 	ld	(hl), c
 	
-MainMenuSetLCDConfig:
-	ld	a, lcdBpp1
-	ld	hl, mpLcdCtrl
-	ld	(hl), a
+; Remove temp breakpoints
+	ld	a, (AMOUNT_OF_TEMP_BREAKPOINTS)
+	or	a, a
+	jr	z, DontRemoveTempBreakpoints
+	ld	c, (AMOUNT_OF_BREAKPOINTS)
+	ld	b, BREAKPOINT_SIZE
+	mlt	bc
+	ld	ix, BreakpointsStart
+	add	ix, bc
+.loop:	lea	ix, ix - BREAKPOINT_SIZE
+	ld	a, 1
+	call	RemoveBreakpoint
+	dec	(AMOUNT_OF_TEMP_BREAKPOINTS)
+	jr	nz, .loop
+DontRemoveTempBreakpoints:
+	ld	hl, (RESTORE_BREAKPOINT_LINE)
 	inc	hl
-	set	2, (hl)
-	ld	hl, SCREEN_START
-	ld	(mpLcdUpbase), hl
+	add	hl, de
+	or	a, a
+	sbc	hl, de
+	dec	hl
+	call	nz, InsertFixedBreakpointAtLine
+	scf
+	sbc	hl, hl
+	ld	(RESTORE_BREAKPOINT_LINE), hl
+	ld	a, (STEP_MODE)
+	ld	(STEP_MODE), 0
+	dec	a
+	jp	z, BASICDebuggerStepContinue
+	dec	a
+	jp	z, BASICDebuggerStepOutContinue
+	dec	a
+	jp	z, BASICDebuggerStepNextContinue
+	dec	a
+	jp	z, BASICDebuggerStepOverContinue
 	
+MainMenuSetLCDConfig:
+	call	SetLCDConfig
 MainMenu:
 	call	ClearScreen
 	ld	c, 0
@@ -220,6 +256,9 @@ Quit:
 	ret
 	
 ; =======================================================================================
+BASICDebuggerStepContinue:
+	call	ClearScreen
+	call	SetLCDConfig
 StepCode:
 	ld	hl, (tempSP)
 	ld	de, (hl)
@@ -227,24 +266,7 @@ StepCode:
 	dec	de
 	dec	de
 	dec	de					; DE = call pointer
-	
-	ld	hl, (STARTUP_BREAKPOINTS)
-	dec	hl
-	ld	bc, -6
-	exx
-	ld	hl, (LINES_START)
-	ld	hl, (hl)
-CheckLineLoop:
-	exx
-	add	hl, bc
-	push	hl
-	ld	hl, (hl)
-	scf
-	sbc	hl, de
-	pop	hl
-	exx
-	dec	hl
-	jr	nc, CheckLineLoop
+	call	GetLineFromAddress
 	ld	(DEBUG_CURRENT_LINE), hl
 	ex	de, hl					; DE = line_numer
 	ld	hl, (LINES_START)
@@ -264,7 +286,7 @@ CheckAmountOfLines:
 	add	hl, bc
 	jr	nc, CheckClipBottom
 ClipAtTop:
-; lines_to_skip = 0
+; first_line_offset = 0
 	ld	de, 0
 ; highlight_line = current_line
 	ld	ixl, a
@@ -272,7 +294,7 @@ ClipAtTop:
 	
 CheckClipBottom:
 ; Else If amount_of_lines - current_line <= 13
-	sbc	hl, de
+	sbc	hl, de				; HL = amount_of_lines - current_line
 	ld	c, 14
 	sbc	hl, bc
 	add	hl, bc
@@ -283,36 +305,54 @@ CheckClipBottom:
 	ld	c, a
 	add	a, e
 	sub	a, l
-; lines_to_skip = amount_of_lines - 25
-	sbc	hl, bc
-	ex	de, hl
-	add	a, e
 	ld	ixl, a
+; first_line_offset = 25 - amount_of_lines
+	ex	de, hl
+	push	bc
+	pop	hl
+	sbc	hl, de
+	ex	de, hl
 	jr	DoDisplayLines
 DisplayLinesNormal:
 ; Else
-; lines_to_skip = current_line - 13
-	ex	de, hl
-	ld	de, 12
-; highlight_line = 13
-	ld	a, e
+; highlight_line = 12
+; first_line_offset = 12 - current_line
+	ld	hl, 12
+	ld	a, l
+	ld	ixl, a
 	sbc	hl, de
 	ex	de, hl
-	add	a, e
-	ld	ixl, a
+	
 DoDisplayLines:
 ; BC = program length
-; DE = amount of lines to skip
+; DE = current line relative to the first displayed line
 ; IXL = amount of lines before active line
+	or	a, a
+	sbc	hl, hl
+	sbc	hl, de
+	ld	(DEBUG_LINE_START), hl
 	ld	a, 1
 	ld	hl, (PROG_START)
 	ld	bc, (PROG_SIZE)
 GetBASICTokenLoopDispColon:
 	ld	(Y_POS), a
 	ld	(X_POS), 1
-	ld	a, d
-	or	a, e
+	bit	7, d
 	jr	nz, GetBASICTokenLoop
+	push	ix					; Line is visible; check whether a breakpoint is placed on this line
+	push	hl
+	push	de
+	ld	hl, (DEBUG_LINE_START)
+	add	hl, de
+	call	IsBreakpointAtLine
+	pop	de
+	pop	hl
+	jr	z, .nobreakpoint
+	dec	(X_POS)
+	ld	a, 0F8h
+	call	PrintChar
+.nobreakpoint:
+	pop	ix					; We pop ix here to make sure the debug dot isn't highlighted: BreakpointsStart and 0xFF != 1
 	ld	a, ':'
 	call	PrintChar
 GetBASICTokenLoop:
@@ -322,8 +362,7 @@ GetBASICTokenLoop:
 	ld	a, (hl)
 	cp	a, tEnter
 	jr	z, AdvanceBASICLine
-	ld	a, d					; Out of screen
-	or	a, e
+	bit	7, d					; Out of screen
 	jr	nz, DontDisplayToken
 	ld	a, (X_POS)
 	cp	a, 40
@@ -347,15 +386,12 @@ DontDisplayToken:
 	dec	bc
 	jr	GetBASICTokenLoop
 AdvanceBASICLine:
-	dec	ixl
-	ld	a, d
-	or	a, e
 	ld	a, (Y_POS)
-	jr	nz, AdvanceYPos
+	bit	7, d
+	jr	nz, .cont
+	dec	ixl
 	add	a, 9
-	inc	de
-AdvanceYPos:
-	dec	de
+.cont:	inc	de
 	inc	hl
 	dec	bc
 	cp	a, 229 - 7
@@ -404,12 +440,66 @@ BASICDebuggerKeyWait:
 	jr	nz, BASICDebuggerQuit
 	jr	BASICDebuggerKeyWait
 	
-BASICDebuggerStepOut:
-BASICDebuggerStepNext:
-BASICDebuggerStepOver:
 BASICDebuggerStep:
+	scf
+	sbc	hl, hl
+	ld	(RESTORE_BREAKPOINT_LINE), hl
+	ld	hl, (DEBUG_CURRENT_LINE)
+	call	IsBreakpointAtLine
+	jr	z, .nobreakpoint
+	ld	(RESTORE_BREAKPOINT_LINE), hl
+	call	RemoveBreakpointFromLine
+.nobreakpoint:
+; Insert temp breakpoint at the line after this line
+	ld	hl, (DEBUG_CURRENT_LINE)
+	inc	hl
+	call	InsertTempBreakpointAtLine
+	ld	hl, (LINES_START)
+	ld	de, (DEBUG_CURRENT_LINE)
+	inc	de
+	add	hl, de
+	add	hl, de
+	add	hl, de
+	add	hl, de
+	add	hl, de
+	add	hl, de
+	ld	hl, (hl)
+	add	hl, de
+	or	a, a
+	sbc	hl, de
+	jr	z, .return
+	inc	hl
+	add	hl, de
+	or	a, a
+	sbc	hl, de
+	jr	nz, .insertjump
+; Insert temp breakpoint at the return address
+	ld	hl, (tempSP)
+	inc	hl
+	inc	hl
+	inc	hl
+	ld	de, (hl)
+	call	GetLineFromAddress
+	call	InsertTempBreakpointAtLine
+	jr	.return
+.insertjump:
+; Insert temp breakpiont at the jump address
+	dec	hl
+	ex	de, hl
+	call	GetLineFromAddress
+	call	InsertTempBreakpointAtLine
+.return:
+	ld	a, 1
+	ld	(STEP_MODE), a
+	call	DecreaseCallReturnAddress
+	jp	Quit
+BASICDebuggerStepOut:
+BASICDebuggerStepOutContinue:
+BASICDebuggerStepNext:
+BASICDebuggerStepNextContinue:
+BASICDebuggerStepOver:
+BASICDebuggerStepOverContinue:
 BASICDebuggerSwitchBreakpoint:
-	
 BASICDebuggerQuit:
 	jp	MainMenu
 	
@@ -802,23 +892,43 @@ NoLabelsFound:
 	call	GetKeyAnyFast
 	jp	MainMenu
 	
-; ==============================================================
-; Routines are starting here
-; ==============================================================
+; =======================================================================================
+; ============================== Routines are starting here =============================
+; =======================================================================================
 
-InsertBreakpoint:
-; HL = line number
-	ld	c, (AMOUNT_OF_BREAKPOINTS)
-	ld	b, 10
-	mlt	bc
-	ld	ix, BREAKPOINTS_START
-	add	ix, bc
-	ld	(ix), hl			; Line number
-	ld	de, (LINES_START)
-	inc	de
-	inc	de
-	inc	de
+InsertTempBreakpointAtLine:
+	inc	(AMOUNT_OF_TEMP_BREAKPOINTS)
+	ld	a, BREAKPOINT_TYPE_TEMP
+	db	006h					; ld b, *
+InsertFixedBreakpointAtLine:
+	assert	BREAKPOINT_TYPE_FIXED = 0
+	xor	a, a
+InsertBreakpointAtLine:
+	ld	b, a
+	call	IsBreakpointAtLine
+	ld	a, b
+	jr	z, DoInsertBreakpoint
+	or	a, a
+	ret	z
+DoInsertBreakpoint:
 	ex	de, hl
+	ld	hl, (LINES_START)
+	ld	hl, (hl)				; HL = amount_of_lines
+	or	a, a
+	sbc	hl, de
+	ret	z
+	ld	ix, BreakpointsStart
+	ld	c, (AMOUNT_OF_BREAKPOINTS)
+	inc	(AMOUNT_OF_BREAKPOINTS)
+	ld	b, BREAKPOINT_SIZE
+	mlt	bc
+	add	ix, bc
+	ld	(ix + BREAKPOINT_TYPE), a
+	ld	(ix + BREAKPOINT_LINE), de
+	ld	hl, (LINES_START)
+	inc	hl
+	inc	hl
+	inc	hl
 	add	hl, de
 	add	hl, de
 	add	hl, de
@@ -826,8 +936,8 @@ InsertBreakpoint:
 	add	hl, de
 	add	hl, de
 	ld	hl, (hl)
-	ld	(ix + 3), hl			; Program pointer
-	lea	de, ix + 6
+	ld	(ix + BREAKPOINT_ADDRESS), hl	; Program pointer
+	lea	de, ix + BREAKPOINT_CODE
 	ld	bc, 4
 	ldir
 	dec	hl
@@ -837,6 +947,74 @@ InsertBreakpoint:
 	ld	(hl), de
 	dec	hl
 	ld	(hl), 0CDh			; CALL icedbg_open
+	ret
+
+RemoveBreakpointFromLine:
+	call	IsBreakpointAtLine
+	ret	z
+RemoveBreakpoint:
+	ld	de, (ix + BREAKPOINT_ADDRESS)
+	lea	hl, ix + BREAKPOINT_CODE
+	ld	bc, 4
+	ldir
+	dec	(AMOUNT_OF_BREAKPOINTS)
+	dec	a				; A = 1 at last breakpoint
+	ret	z
+	ld	c, a
+	ld	b, BREAKPOINT_SIZE
+	mlt	bc
+	add	ix, bc
+	lea	de, ix - BREAKPOINT_SIZE
+	lea	hl, ix
+	ldir
+	ret
+
+GetLineFromAddress:
+; Inputs:
+;   DE = address
+; Returns:
+;   HL = line number
+
+	ld	hl, (STARTUP_BREAKPOINTS)
+	ld	bc, -6
+	exx
+	ld	hl, (LINES_START)
+	ld	hl, (hl)
+.loop:	exx
+	add	hl, bc
+	push	hl
+	ld	hl, (hl)
+	scf
+	sbc	hl, de
+	pop	hl
+	exx
+	dec	hl
+	jr	nc, .loop
+	ret
+
+IsBreakpointAtLine:
+; Inputs:
+;   HL = line number
+; Outputs:
+;   Z if not found
+;   NZ if found
+;   A = index of found breakpoint (starting at the end)
+
+	ld	a, (AMOUNT_OF_BREAKPOINTS)
+	or	a, a
+	ret	z
+	ld	ix, BreakpointsStart
+.loop:	ld	de, (ix + BREAKPOINT_LINE)
+	or	a, a
+	sbc	hl, de
+	add	hl, de
+	jr	z, .found
+	lea	ix, ix + BREAKPOINT_SIZE
+	dec	a
+	jr	nz, .loop
+	ret
+.found:	dec	a
+	inc	a
 	ret
 	
 RestorePaletteUSB:
@@ -936,6 +1114,26 @@ ClearScreen:
 	inc	de
 	ld	bc, lcdWidth * lcdHeight / 8 - 1
 	ldir
+	ret
+	
+SetLCDConfig:
+	ld	a, lcdBpp1
+	ld	hl, mpLcdCtrl
+	ld	(hl), a
+	inc	hl
+	set	2, (hl)
+	ld	hl, SCREEN_START
+	ld	(mpLcdUpbase), hl
+	ret
+	
+DecreaseCallReturnAddress:
+	ld	hl, (tempSP)
+	ld	de, (hl)
+	dec	de
+	dec	de
+	dec	de
+	dec	de					; DE = call pointer
+	ld	(hl), de
 	ret
 	
 GetKeyAnyFast:
@@ -1093,9 +1291,15 @@ virtual at iy
 	LINES_START:			dl 0
 	STARTUP_BREAKPOINTS:		dl 0
 	LABELS_START:			dl 0
-	AMOUNT_OF_BREAKPOINTS:		dl 0
+	AMOUNT_OF_BREAKPOINTS:		db 0
 	DEBUG_CURRENT_LINE:		dl 0
 	DEBUG_LINE_START:		dl 0
+	STEP_MODE:			db 0
+	AMOUNT_OF_TEMP_BREAKPOINTS:	db 0
+	RESTORE_BREAKPOINT_LINE:	dl 0
 	load iy_data: $ - $$ from $$
 end virtual
 iy_base db iy_data
+
+BreakpointsStart:
+	rb	BREAKPOINT_SIZE * 100
