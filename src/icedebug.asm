@@ -148,19 +148,7 @@ icedbg_open:
 	push	ix
 	
 	ld	iy, iy_base
-	ld	hl, mpLcdPalette
-	lea	de, PALETTE_ENTRIES_BACKUP
-	ld	bc, 4
-	ldir
-	dec	c
-	dec	hl
-	ld	(hl), b
-	dec	hl
-	ld	(hl), b
-	dec	hl
-	ld	(hl), c
-	dec	hl
-	ld	(hl), c
+	call	SetICEPalette
 	
 ; Remove temp breakpoints
 	ld	a, (AMOUNT_OF_TEMP_BREAKPOINTS)
@@ -781,7 +769,9 @@ ViewScreen:
 	dec	hl
 	ld	hl, (hl)
 	ld	(mpLcdUpBase), hl
+	call	RestorePalette
 	call	GetKeyAnyFast
+	call	SetICEPalette
 	jp	MainMenuSetLCDConfig
 	
 ; =======================================================================================
@@ -792,7 +782,9 @@ ViewBuffer:
 	ld	(mpLcdCtrl), hl
 	ld	hl, (mpLcdLpBase)
 	ld	(mpLcdUpBase), hl
+	call	RestorePalette
 	call	GetKeyAnyFast
+	call	SetICEPalette
 	jp	MainMenuSetLCDConfig
 	
 ; =======================================================================================
@@ -1019,16 +1011,17 @@ IsBreakpointAtLine:
 	
 RestorePaletteUSB:
 ; Restore palette, usb area, variables and registers
-	ld	de, mpLcdPalette
-	lea	hl, PALETTE_ENTRIES_BACKUP
-	ld	bc, 4
-	ldir
 	ld	hl, usbArea
 	ld	(hl), 0
 	push	hl
 	pop	de
 	inc	de
 	ld	bc, 14305
+	ldir
+RestorePalette:
+	ld	de, mpLcdPalette
+	lea	hl, PALETTE_ENTRIES_BACKUP
+	ld	bc, 4
 	ldir
 	ret
 
@@ -1124,6 +1117,22 @@ SetLCDConfig:
 	set	2, (hl)
 	ld	hl, SCREEN_START
 	ld	(mpLcdUpbase), hl
+	ret
+	
+SetICEPalette:
+	ld	hl, mpLcdPalette
+	lea	de, PALETTE_ENTRIES_BACKUP
+	ld	bc, 4
+	ldir
+	dec	c
+	dec	hl
+	ld	(hl), b
+	dec	hl
+	ld	(hl), b
+	dec	hl
+	ld	(hl), c
+	dec	hl
+	ld	(hl), c
 	ret
 	
 DecreaseCallReturnAddress:
