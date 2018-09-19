@@ -182,15 +182,11 @@ DontRemoveTempBreakpoints:
 	sbc	hl, hl
 	ld	(RESTORE_BREAKPOINT_LINE), hl
 	ld	a, (STEP_MODE)
+	or	a, a
+	jr	z, MainMenuSetLCDConfig
 	ld	(STEP_MODE), 0
-	dec	a
-	jp	z, BASICDebuggerStepContinue
-	dec	a
-	jp	z, BASICDebuggerStepOverContinue
-	dec	a
-	jp	z, BASICDebuggerStepNextContinue
-	dec	a
-	jp	z, BASICDebuggerStepOutContinue
+	cp	a, STEP_RETURN
+	jp	c, StepCodeSetup
 	
 MainMenuSetLCDConfig:
 	call	SetLCDConfig
@@ -253,7 +249,7 @@ Quit:
 	ret
 	
 ; =======================================================================================
-BASICDebuggerStepContinue:
+StepCodeSetup:
 	call	ClearScreen
 	call	SetLCDConfig
 StepCode:
@@ -489,11 +485,8 @@ BASICDebuggerStep:
 	ld	(STEP_MODE), STEP
 	jp	Quit
 BASICDebuggerStepOut:
-BASICDebuggerStepOutContinue:
 BASICDebuggerStepNext:
-BASICDebuggerStepNextContinue:
 BASICDebuggerStepOver:
-BASICDebuggerStepOverContinue:
 BASICDebuggerSwitchBreakpoint:
 BASICDebuggerQuit:
 	ld	(STEP_MODE), STEP_RETURN
