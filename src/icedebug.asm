@@ -26,6 +26,12 @@ BREAKPOINT_TYPE_TEMP   := 1
 BREAKPOINT_LINE    := 1
 BREAKPOINT_ADDRESS := 4
 BREAKPOINT_CODE    := 7
+
+STEP               := 1
+STEP_OVER          := 2
+STEP_NEXT          := 3
+STEP_OUT           := 4
+STEP_RETURN        := 5
 	
 ; DE = compiled program name
 ; Return C if failure
@@ -180,11 +186,11 @@ DontRemoveTempBreakpoints:
 	dec	a
 	jp	z, BASICDebuggerStepContinue
 	dec	a
-	jp	z, BASICDebuggerStepOutContinue
+	jp	z, BASICDebuggerStepOverContinue
 	dec	a
 	jp	z, BASICDebuggerStepNextContinue
 	dec	a
-	jp	z, BASICDebuggerStepOverContinue
+	jp	z, BASICDebuggerStepOutContinue
 	
 MainMenuSetLCDConfig:
 	call	SetLCDConfig
@@ -480,7 +486,7 @@ BASICDebuggerStep:
 	call	GetLineFromAddress
 	call	InsertTempBreakpointAtLine
 .return:
-	ld	(STEP_MODE), 1
+	ld	(STEP_MODE), STEP
 	jp	Quit
 BASICDebuggerStepOut:
 BASICDebuggerStepOutContinue:
@@ -490,8 +496,7 @@ BASICDebuggerStepOver:
 BASICDebuggerStepOverContinue:
 BASICDebuggerSwitchBreakpoint:
 BASICDebuggerQuit:
-	ld	(STEP_MODE), 0
-	call	DecreaseCallReturnAddress
+	ld	(STEP_MODE), STEP_RETURN
 	jp	MainMenu
 	
 ; =======================================================================================
