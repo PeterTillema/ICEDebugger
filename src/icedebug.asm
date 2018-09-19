@@ -230,6 +230,9 @@ PrintOptionsLoop:
 	jp	z, SafeExit
 	
 Quit:
+	ld	a, (STEP_MODE)
+	or	a, a
+	call	nz, DecreaseCallReturnAddress
 	call	RestorePaletteUSB
 	pop	ix
 	pop	hl
@@ -477,9 +480,7 @@ BASICDebuggerStep:
 	call	GetLineFromAddress
 	call	InsertTempBreakpointAtLine
 .return:
-	ld	a, 1
-	ld	(STEP_MODE), a
-	call	DecreaseCallReturnAddress
+	ld	(STEP_MODE), 1
 	jp	Quit
 BASICDebuggerStepOut:
 BASICDebuggerStepOutContinue:
@@ -489,6 +490,8 @@ BASICDebuggerStepOver:
 BASICDebuggerStepOverContinue:
 BASICDebuggerSwitchBreakpoint:
 BASICDebuggerQuit:
+	ld	(STEP_MODE), 0
+	call	DecreaseCallReturnAddress
 	jp	MainMenu
 	
 ; =======================================================================================
