@@ -402,7 +402,7 @@ BASICDebuggerKeyWait:
 	ld	l, 012h					; Check if the user pressed F1 - F5
 	ld	a, (hl)
 	rra
-	jr	c, BASICDebuggerQuit			; F5 = quit
+	jp	c, BASICDebuggerQuit			; F5 = quit
 	rra
 	jr	c, BASICDebuggerStepOut			; F4 = step out
 	rra
@@ -413,12 +413,24 @@ BASICDebuggerKeyWait:
 	jr	c, BASICDebuggerStep			; F1 = step
 	ld	l, 01Ch					; Check if we pressed ENTER
 	bit	0, (hl)
-	jr	nz, BASICDebuggerSwitchBreakpoint	; Enter = switch breakpoint
+	jp	nz, BASICDebuggerSwitchBreakpoint	; Enter = switch breakpoint
 	bit	6, (hl)					; Check if we pressed CLEAR
-	jr	nz, BASICDebuggerQuit			; Clear = quit stepping
+	jp	nz, BASICDebuggerQuit			; Clear = quit stepping
 	jr	BASICDebuggerKeyWait
 	
+BASICDebuggerStepOut:
+	ld	a, STEP_OUT
+	jr	InsertStepMode
+BASICDebuggerStepNext:
+	ld	a, STEP_NEXT
+	jr	InsertStepMode
+BASICDebuggerStepOver:
+	ld	a, STEP_OVER
+	jr	InsertStepMode
 BASICDebuggerStep:
+	ld	a, STEP
+InsertStepMode:
+	ld	(STEP_MODE), a				; Set step mode
 	scf						; Empty restore breakpoint line
 	sbc	hl, hl
 	ld	(RESTORE_BREAKPOINT_LINE), hl
@@ -428,6 +440,23 @@ BASICDebuggerStep:
 	ld	(RESTORE_BREAKPOINT_LINE), hl
 	call	RemoveBreakpointFromLine
 .nobreakpoint:
+
+; Here we need to check which step mode uses which temp breakpoints:
+;            | Next line | Jump address  | Return address |
+; -----------|-----------|---------------|----------------|
+; Step:      |     0     |        X      |       -1       |
+; Step over: |     0     | X if not call |       -1       |
+; Step next: |     0     |               |                |
+; Step out:  |           |               |     Always     |
+; 
+; Jump address options:
+;   0:  line without jump, call or return
+;   -1: return
+;   X:  jump address
+
+	ld	a, (STEP_MODE)
+	cp	a, STEP_OUT
+	jr	z, .insertreturnaddr
 	ld	hl, (DEBUG_CURRENT_LINE)		; Insert temp breakpoint at the line after this one
 	inc	hl
 	call	InsertTempBreakpointAtLine
@@ -445,30 +474,44 @@ BASICDebuggerStep:
 	or	a, a
 	sbc	hl, de
 	jr	z, .return
-	inc	hl					; If it's not -1, it's actually a jump
+	inc	hl					; If it's not a -1, it's a real jump
 	add	hl, de
 	or	a, a
 	sbc	hl, de
 	jr	nz, .insertjump
+	ld	a, (STEP_MODE)
+	cp	a, STEP_NEXT
+	jr	z, .return
+.insertreturnaddr:
 	ld	hl, (tempSP)				; It's -1, so the line is a Return -> place temp breakpoint at return address
 	inc	hl
 	inc	hl
 	inc	hl
 	ld	de, (hl)				; Return address
+	ld	hl, (LINES_START)
+	inc	hl
+	inc	hl
+	inc	hl
+	ld	hl, (hl)
+	ex	de, hl
+	or	a, a
+	sbc	hl, de
+	jr	c, .return
+	add	hl, de
+	ex	de, hl
 	call	GetLineFromAddress
 	call	InsertTempBreakpointAtLine
 	jr	.return
 .insertjump:
+	ld	a, (STEP_MODE)
+	cp	a, STEP
+	jr	nz, .return
 	dec	hl					; Place temp breakpoint at the jump address
 	ex	de, hl
 	call	GetLineFromAddress
 	call	InsertTempBreakpointAtLine
 .return:
-	ld	(STEP_MODE), STEP			; And finally return from debugging, until it's called again from a temp breakpoint
 	jp	Quit
-BASICDebuggerStepOut:
-BASICDebuggerStepNext:
-BASICDebuggerStepOver:
 BASICDebuggerSwitchBreakpoint:
 BASICDebuggerQuit:
 	ld	(STEP_MODE), STEP_RETURN
@@ -1125,6 +1168,8 @@ DecreaseCallReturnAddress:
 	ret
 	
 GetKeyAnyFast:
+	ld	a, 10
+	call	_DelayTenTimesAms
 	ld	hl, mpKeyRange + (keyModeAny shl 8)
 	ld	(hl), h
 	ld	l, keyIntStat
@@ -1138,7 +1183,7 @@ GetKeyAnyFast:
 .wait2:
 	cp	a, (hl)
 	jr	nz, .wait2
-	ld	a, 20
+	ld	a, 10
 	jp	_DelayTenTimesAms
 	
 AdvanceLine:
