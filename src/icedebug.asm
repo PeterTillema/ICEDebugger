@@ -15,7 +15,6 @@ include_library '../include/fileioc.asm'
 	export icedbg_setup
 	export icedbg_open
 	
-SCREEN_START       := (usbArea and 0FFFFF8h) + 8	; Note: mask to 8 bytes because LCD base!
 ICE_VARIABLES      := 0D13F56h				; See src/main.h
 AMOUNT_OF_OPTIONS  := 11
 
@@ -112,6 +111,7 @@ NoVariablesSkip:
 	inc	hl
 	add	hl, bc
 	ld	(LABELS_START), hl			; Start of labels
+	call	ti_CloseAll				; Close all FILEIOC slots
 	ld	hl, (STARTUP_BREAKPOINTS)
 	ld	a, (hl)
 	or	a, a
@@ -262,7 +262,8 @@ StepCode:
 	ld	hl, (LINES_START)			; Pointer to line data
 	ld	hl, (hl)				; HL = amount of lines
 	
-	ld	bc, 14					; If current line <= 13 or amount of lines <= 25
+	inc	bc					; BC = -1 from GetLineFromAddress
+	ld	c, 14					; If current line <= 13 or amount of lines <= 25
 	ld	a, d					;    current line <= 13
 	or	a, a
 	jr	nz, CheckClipBottom
@@ -376,7 +377,13 @@ AdvanceBASICLine:
 	jr	c, GetBASICTokenLoopDispColon
 BASICProgramDone:
 	ld	ixl, 1					; Prevent anything else to be displayed inverted
-	ld	hl, SCREEN_START + (228 * lcdWidth / 8)	; Location to draw a black line
+	ld	hl, SCREEN_START - 1			; Location to draw a black line
+	ld	a, l
+	or	a, 7
+	ld	l, a
+	inc	hl
+	ld	de, 228 * lcdWidth / 8
+	add	hl, de
 	ld	de, 0FFFFFFh				; FF color
 	ld	b, 5
 FillBlackRowLoop:					; Fill a horizontal line with black
@@ -399,24 +406,26 @@ FillBlackRowLoop:					; Fill a horizontal line with black
 	call	PrintString
 BASICDebuggerKeyWait:
 	call	GetKeyAnyFast				; Wait until any key is pressed
-	ld	l, 012h					; Check if the user pressed F1 - F5
-	ld	a, (hl)
-	rra
-	jp	c, BASICDebuggerQuit			; F5 = quit
-	rra
-	jr	c, BASICDebuggerStepOut			; F4 = step out
-	rra
-	jr	c, BASICDebuggerStepNext		; F3 = step next
-	rra
-	jr	c, BASICDebuggerStepOver		; F2 = step over
-	rra
-	jr	c, BASICDebuggerStep			; F1 = step
-	ld	l, 01Ch					; Check if we pressed ENTER
-	bit	0, (hl)
-	jp	nz, BASICDebuggerSwitchBreakpoint	; Enter = switch breakpoint
-	bit	6, (hl)					; Check if we pressed CLEAR
-	jp	nz, BASICDebuggerQuit			; Clear = quit stepping
+	cp	a, skEnter
+	jr	z, BASICDebuggerSwitchBreakpoint
+	cp	a, skClear
+	jr	z, BASICDebuggerQuit
+	sub	a, skGraph
+	jr	z, BASICDebuggerQuit
+	dec	a
+	jr	z, BASICDebuggerStepOut
+	dec	a
+	jr	z, BASICDebuggerStepNext
+	dec	a
+	jr	z, BASICDebuggerStepOver
+	dec	a
+	jr	z, BASICDebuggerStep
 	jr	BASICDebuggerKeyWait
+	
+BASICDebuggerQuit:
+	ld	(STEP_MODE), STEP_RETURN
+	jp	MainMenu
+BASICDebuggerSwitchBreakpoint:
 	
 BASICDebuggerStepOut:
 	ld	a, STEP_OUT
@@ -493,18 +502,15 @@ InsertStepMode:
 	jr	.return
 .insertjump:
 	ld	a, (STEP_MODE)
-	cp	a, STEP
-	jr	nz, .return
+assert STEP < STEP_NEXT & STEP_OVER < STEP_NEXT
+	cp	a, STEP_NEXT
+	jr	nc, .return
 	dec	hl					; Place temp breakpoint at the jump address
 	ex	de, hl
 	call	GetLineFromAddress
 	call	InsertTempBreakpointAtLine
 .return:
 	jp	Quit
-BASICDebuggerSwitchBreakpoint:
-BASICDebuggerQuit:
-	ld	(STEP_MODE), STEP_RETURN
-	jp	MainMenu
 	
 ; =======================================================================================
 ViewVariables:
@@ -568,7 +574,8 @@ VariableOffset = $+2
 	jr	nc, PrintAllVariables			; If we need to scroll, display it all over again
 	jp	nz, MainMenu				; We pressed Clear, so return
 							; Now we can say the user pressed Enter, so edit the variable
-	exx						; Save BC and DE for later
+	push	bc					; Save BC and DE for later
+	push	de
 	ld	(X_POS), 25
 	ld	b, 8
 .loop:							; Clear the displayed value
@@ -583,45 +590,24 @@ DisplayEmptyCursor:					; Display underscore as a "cursor"
 	ld	a, 0E4h					; _
 	call	PrintChar
 GetVariableNumberLoop:					; Wait for a number/Enter to be pressed
+	push	bc
 	call	GetKeyAnyFast
-	ld	l, 01Ch
-	bit	0, (hl)					; We pressed Enter so get the value and replace it
-	jr	nz, GetVariableNewNumber
-	ld	l, 016h					; We pressed 0, 1, 4 or 7
-	ld	a, (hl)
-	and	a, 000001111b
-	jr	z, Check258
-	sub	a, 4					; A = 1 -> 0
-	add	a, 255					; A = 2 -> 1
-	sbc	a, c					; A = 4 -> 4
-	jr	GotVariableChar				; A = 8 -> 7
-							; Formula: A = A - (A != 4)
-Check258:
-	ld	l, 018h					; We pressed 2, 5 or 8
-	ld	a, (hl)
-	and	a, 000001110b
-	jr	z, Check359
-	add	a, c					; A = 2 -> 2
-	sub	a, 255					; A = 4 -> 5
-	sbc	a, c					; A = 8 -> 8
-	jr	GotVariableChar				; Formula: A = A + (A = 4)
-Check359:
-	ld	l, 01Ah					; We pressed 3, 6 or 9
-	ld	a, (hl)
-	and	a, 000001110b
-	jr	z, GetVariableNumberLoop
-	add	a, c					; A = 2 -> 3
-	sub	a, 254					; A = 4 -> 6
-	sbc	a, c					; A = 8 -> 9
-							; Formula: A = A + 1 + (A != 4)
-GotVariableChar:
+	cp	a, skEnter				; We pressed Enter so get the value and replace it
+	jr	z, GetVariableNewNumber
+	ld	hl, NumbersKeyPresses
+	ld	bc, 10
+	cpir
+	jr	nz, GetVariableNumberLoop
 	dec	(X_POS)					; If a number is pressed, display it and the cursor again
+	ld	a, c
 	add	a, '0'
 	ld	(de), a
 	inc	de
 	call	PrintChar
+	pop	bc
 	djnz	DisplayEmptyCursor			; Max 8 numbers -> FFFFFFh = 8 chars
 GetVariableNewNumber:
+	pop	bc
 	xor	a, a					; Zero terminate the string
 	ld	(de), a
 	ld	de, TempStringData
@@ -643,9 +629,8 @@ GetNumberCharLoop:
 	inc	de
 	jr	GetNumberCharLoop
 OverwriteVariable:
-	push	hl
-	exx						; Restore BC and DE
-	pop	hl
+	pop	de					; Restore BC and DE
+	pop	bc
 	ld	a, d					; Get current variable offset
 	add	a, c
 	ld	b, a
@@ -661,7 +646,7 @@ VariableOffset2 = $+2
 ; =======================================================================================
 ViewMemory:						; Only static thing for now!
 	ld	hl, ramStart
-	ld	c, 24
+	ld	c, 23
 	ld	(Y_POS), 0
 MemoryDrawLine:
 	ld	a, (Y_POS)
@@ -1065,16 +1050,14 @@ PrintCursor:
 	dec	(X_POS)
 CheckKeyLoop:
 	call	GetKeyAnyFast
-	ld	l, 01Ch
-	bit	0, (hl)
-	jr	nz, PressedEnter
-	bit	6, (hl)
-	jr	nz, PressedClear
-	ld	l, 01Eh
-	bit	0, (hl)
-	jr	nz, MoveCursorDown
-	bit	3, (hl)
-	jr	z, CheckKeyLoop
+	cp	a, skEnter
+	jr	z, PressedEnter
+	cp	a, skClear
+	jr	z, PressedClear
+	cp	a, skDown
+	jr	z, MoveCursorDown
+	cp	a, skUp
+	jr	nz, CheckKeyLoop
 MoveCursorUp:
 	ld	a, c
 	add	a, d
@@ -1097,10 +1080,10 @@ EraseCursor:
 	call	PrintChar
 	jr	PrintCursor
 PressedEnter:
-	cp	a, a
 	scf
 	ret
 PressedClear:
+	or	a, 1
 	scf
 	ret
 PressedUp:
@@ -1114,7 +1097,11 @@ TempStringData:
 	rb	9
 	
 ClearScreen:
-	ld	hl, SCREEN_START
+	ld	hl, SCREEN_START - 1
+	set	0, l
+	set	1, l
+	set	2, l
+	inc	hl
 	ld	(hl), 0
 	push	hl
 	pop	de
@@ -1129,7 +1116,11 @@ SetLCDConfig:
 	ld	(hl), a
 	inc	hl
 	set	2, (hl)
-	ld	hl, SCREEN_START
+	ld	hl, SCREEN_START - 1
+	ld	a, l
+	or	a, 7
+	ld	l, a
+	inc	hl
 	ld	(mpLcdUpbase), hl
 	ret
 	
@@ -1160,23 +1151,17 @@ DecreaseCallReturnAddress:
 	ret
 	
 GetKeyAnyFast:
-	ld	a, 10
-	call	_DelayTenTimesAms
-	ld	hl, mpKeyRange + (keyModeAny shl 8)
-	ld	(hl), h
-	ld	l, keyIntStat
-	xor	a, a
-	ld	(hl), keyIntKeyPress
-.wait1:
-	bit	bKeyIntKeyPress, (hl)
-	jr	z, .wait1
-	ld	l, a
-	ld	(hl), keyModeScanOnce
-.wait2:
-	cp	a, (hl)
-	jr	nz, .wait2
-	ld	a, 10
-	jp	_DelayTenTimesAms
+	push	ix
+	push	iy
+	ld	iy, flags
+.loop:
+	call	_GetCSC
+	or	a, a
+	jr	z, .loop
+	pop	iy
+	pop	ix
+	di
+	ret
 	
 AdvanceLine:
 	ld	a, (Y_POS)
@@ -1251,7 +1236,11 @@ PrintChar:
 	ld	d, lcdWidth / 8
 	mlt	de
 	add	hl, de
-	ld	de, SCREEN_START
+	ld	de, SCREEN_START - 1
+	ld	a, e
+	or	a, 7
+	ld	e, a
+	inc	de
 	add	hl, de
 	ex	de, hl
 	ld	hl, _DefaultTIFontData
@@ -1297,6 +1286,9 @@ StepString:
 	db	"Step  StepOver   StepNext  StepOut  Quit", 0
 SlotOptionsString:
 	db	"Slot Type Name      DataPtr Size  Offset", 0
+	
+NumbersKeyPresses:
+	db	sk9, sk8, sk7, sk6, sk5, sk4, sk3, sk2, sk1, sk0
 
 _DefaultTIFontData:
 ; To get the font data, load font.pf into 8x8 ROM PixelFont Editor, export it as an assembly include file,
@@ -1328,3 +1320,6 @@ iy_base db iy_data
 
 BreakpointsStart:
 	rb	BREAKPOINT_SIZE * 100
+	
+SCREEN_START:
+	rb	lcdWidth * lcdHeight / 8 + 7
