@@ -488,17 +488,6 @@ InsertStepMode:
 	inc	hl
 	inc	hl
 	ld	de, (hl)				; Return address
-	ld	hl, (LINES_START)
-	inc	hl
-	inc	hl
-	inc	hl
-	ld	hl, (hl)
-	ex	de, hl
-	or	a, a
-	sbc	hl, de
-	jr	c, .return
-	add	hl, de
-	ex	de, hl
 	call	GetLineFromAddress
 	call	InsertTempBreakpointAtLine
 	jr	.return
@@ -928,9 +917,9 @@ DoInsertBreakpoint:
 	ex	de, hl
 	ld	hl, (LINES_START)
 	ld	hl, (hl)				; HL = amount of lines
-	or	a, a
+	scf
 	sbc	hl, de
-	ret	z
+	ret	c
 	ld	ix, BreakpointsStart
 	ld	c, (AMOUNT_OF_BREAKPOINTS)
 	inc	(AMOUNT_OF_BREAKPOINTS)
@@ -994,7 +983,11 @@ GetLineFromAddress:
 	exx
 	ld	hl, (LINES_START)
 	ld	hl, (hl)
-.loop:	exx
+	ld	bc, -1
+.loop:
+	add	hl, bc
+	ret	nc
+	exx
 	add	hl, bc
 	push	hl
 	ld	hl, (hl)
@@ -1002,7 +995,6 @@ GetLineFromAddress:
 	sbc	hl, de
 	pop	hl
 	exx
-	dec	hl
 	jr	nc, .loop
 	ret
 
