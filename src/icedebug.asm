@@ -3,7 +3,7 @@ include '../include/library.inc'
 include '../include/include_library.inc'
 ;-------------------------------------------------------------------------------
 
-library 'ICEDEBUG', 4
+library 'ICEDEBUG', 1
 
 ;-------------------------------------------------------------------------------
 include_library '../include/fileioc.asm'
