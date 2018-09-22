@@ -347,7 +347,10 @@ GetBASICTokenLoop:
 	push	bc					; If the token is visible, convert to characters and display it
 	push	de
 	push	hl
+	push	iy
+	ld	iy, flags
 	call	_Get_Tok_Strng
+	pop	iy
 	ld	hl, OP3
 	call	PrintString
 	pop	hl
@@ -402,8 +405,24 @@ FillBlackRowLoop:					; Fill a horizontal line with black
 	ld	(X_POS), 0
 	ld	hl, StepString
 	call	PrintString
+	ld	c, 0
+BASICDebuggerDisplayCursor:
+	ld	a, c
+	add	a, a
+	add	a, a
+	add	a, a
+	add	a, c
+	inc	a
+	ld	(Y_POS), a
+	ld	(X_POS), 0
+	ld	a, '>'
+	call	PrintChar
 BASICDebuggerKeyWait:
 	call	GetKeyAnyFast				; Wait until any key is pressed
+	cp	a, skUp
+	jr	z, BASICDebuggerKeyUp
+	cp	a, skDown
+	jr	z, BASICDebuggerKeyDown
 	cp	a, skEnter
 	jr	z, BASICDebuggerSwitchBreakpoint
 	cp	a, skClear
@@ -420,10 +439,59 @@ BASICDebuggerKeyWait:
 	jr	z, BASICDebuggerStep
 	jr	BASICDebuggerKeyWait
 	
+BASICDebuggerKeyUp:
+	ld	a, c
+	or	a, a
+	jr	z, BASICDebuggerKeyWait
+	dec	c
+	jr	BASICDebuggerMoveCursor
+BASICDebuggerKeyDown:
+	ld	b, 25
+	ld	hl, (LINES_START)
+	ld	hl, (hl)
+	dec	hl
+	ld	a, h
+	or	a, a
+	jr	nz, .docheck
+	ld	a, b
+	cp	a, l
+	jr	c, .docheck
+	ld	b, l
+.docheck:
+	ld	a, b
+	cp	a, c
+	jr	z, BASICDebuggerKeyWait
+	inc	c
+BASICDebuggerMoveCursor:
+	dec	(X_POS)
+	xor	a, a
+	call	PrintChar
+	jr	BASICDebuggerDisplayCursor
+	
 BASICDebuggerQuit:
 	ld	(STEP_MODE), STEP_RETURN
 	jp	MainMenu
+	
 BASICDebuggerSwitchBreakpoint:
+	push	bc
+	ld	hl, (DEBUG_LINE_START)
+	ld	b, 1
+	mlt	bc
+	add	hl, bc
+	call	IsBreakpointAtLine
+	jr	z, .insert
+	call	RemoveBreakpointFromLine
+	ld	a, ':'
+	jr	.dispchar
+.insert:
+	call	InsertFixedBreakpointAtLine
+	ld	a, 0F8h
+.dispchar:
+	ld	(X_POS), 1
+	call	PrintChar
+	dec	(X_POS)
+	pop	bc
+	jr	BASICDebuggerKeyWait
 	
 BASICDebuggerStepOut:
 	ld	a, STEP_OUT
