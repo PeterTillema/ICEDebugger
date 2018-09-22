@@ -326,14 +326,12 @@ GetBASICTokenLoopDispColon:
 	call	IsBreakpointAtLine			; Check if there's a breakpoint at this line
 	pop	de
 	pop	hl
+	ld	a, ':'					; Display the colon
 	jr	z, .nobreakpoint
-	dec	(X_POS)					; If so, display a dot in front of the line
-	ld	a, 0F8h
-	call	PrintChar
+	ld	a, 0F8h					; If so, display a dot instead of the colon
 .nobreakpoint:
-	pop	ix					; We pop ix here to make sure the debug dot isn't highlighted: BreakpointsStart and 0xFF != 1
-	ld	a, ':'					; Display the ":" to signify a new line
 	call	PrintChar
+	pop	ix					; We pop ix here to make sure the debug dot isn't highlighted: BreakpointsStart and 0xFF != 1
 GetBASICTokenLoop:
 	ld	a, b					; Program's done!
 	or	a, c
