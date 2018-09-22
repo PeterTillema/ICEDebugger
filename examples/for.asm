@@ -54,7 +54,6 @@ D1A8E0: 00            nop
 
 DEBUGAPPVAR:
 	.db	"A", 0			; Name + zero byte
-	.dl	0			; Pointer to slot functions
 	.db	2			; Amount of variables
 	.db	"A", 0			; Variables
 	.db	"B", 0
@@ -66,7 +65,6 @@ DEBUGAPPVAR:
 	.dl	$D1A8BE, $D1A8B7	; End
 	.dl	$D1A8D0, 0		; dbd(1
 	.dl	$D1A8D0, 0		; 5->A
-	.db	0FFh			; End of program
 	.db	1			; Amount of startup breakpoints
 	.dl	7			; Startup breakpoints
 	.db	0			; Amount of labels

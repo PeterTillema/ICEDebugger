@@ -52,7 +52,6 @@ D1A8D9: 00            nop
 
 DEBUGAPPVAR:
 	.db	"A", 0			; Name + zero byte
-	.dl	0			; Pointer to slot functions
 	.db	1			; Amount of variables
 	.db	"A", 0			; Variables
 	.db	7			; Amount of lines
@@ -63,7 +62,6 @@ DEBUGAPPVAR:
 	.dl	$D1A8BA, $D1A8B3	; End
 	.dl	$D1A8C7, 0		; dbd(1
 	.dl	$D1A8C7, 0		; 5->A
-	.db	0FFh			; End of program
 	.db	1			; Amount of startup breakpoints
 	.dl	7			; Startup breakpoints
 	.db	0			; Amount of labels
