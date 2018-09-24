@@ -8,10 +8,11 @@ Empty lines (i.e. comments, Lbl) will be ignored and you won't be able to place 
 
 Main menu: press `[UP]` and `[DOWN]` to select an option and `[ENTER]` to go to that option. `[CLEAR]` will return to the program. Options: 
 1. Step through code: this is probably the most interesting one. With this option you can step through your source code, allowing the program to run line by line. In between these lines you can look at and edit variables, view the screen and much more! Press `[UP]` or `[DOWN]` to select a line. If you press `[ENTER]` it will either insert a breakpoint at or remove the breakpoint from this line. Suboptions:
-    * _Step_: continue one line. If you're currently at an If, Repeat, While, For(, Goto or Call statement, it might jump to another line, like the call address. Otherwise it will just advance one line or return.
-    * _Step Over_: this is pretty much the same as _Step_, except that Call's will be skipped, so a subroutine is called, it returns and then you can continue stepping.
-    * _Step Next_: this is more useful: you always step to the next line. This looks similar to _Step_, but is different regarding to control flow statements. This is the only way to get out loops (press _Step Next_ at End). Note that the next line may not always be reached, for example when you Return or you pressed _Step Next_ on an If-statement which is false!
-    * _Quit_: return from stepping and goes back to the main menu.
+    * _Step_ (`[Y=]`): continue one line. If you're currently at an If, Repeat, While, For(, Goto or Call statement, it might jump to another line, like the call address. Otherwise it will just advance one line or return.
+    * _Step Over_ (`[WINDOW]`): this is pretty much the same as _Step_, except that Call's will be skipped, so a subroutine is called, it returns and then you can continue stepping.
+    * _Step Next_ (`[ZOOM]`): this is more useful: you always step to the next line. This looks similar to _Step_, but is different regarding to control flow statements. This is the only way to get out loops (press _Step Next_ at End). Note that the next line may not always be reached, for example when you Return or you pressed _Step Next_ on an If-statement which is false!
+    * _Step Out_  (`[TRACE]`): step back to the calling function. This is useful if you want to quit from a subroutine, or stop debugging the program.
+    * _Quit_ (`[GRAPH]`): return from stepping and goes back to the main menu.
     
 2. View/edit variables: another quite useful feature! Here you can take a look at all your variables, what their values are and change them. Press `[UP]` and `[DOWN]` to select a variable (note that if you have more than 25 used variables, you can scroll too), press `[ENTER]` to edit a variable and `[CLEAR]` to return. Editing a variable is very easy: just type in the digits and press `[ENTER]` again. Now the variable has a new value.
 
