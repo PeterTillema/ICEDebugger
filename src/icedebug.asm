@@ -26,11 +26,11 @@ BREAKPOINT_LINE    := 1
 BREAKPOINT_ADDRESS := 4
 BREAKPOINT_CODE    := 7
 
-STEP               := 1
-STEP_OVER          := 2
-STEP_NEXT          := 3
-STEP_OUT           := 4
-STEP_RETURN        := 5
+STEP_RETURN        := 1
+STEP               := 2
+STEP_OVER          := 3
+STEP_NEXT          := 4
+STEP_OUT           := 5
 	
 icedbg_setup:
 	di
@@ -180,9 +180,12 @@ DontRemoveTempBreakpoints:
 	ld	a, (STEP_MODE)				; Check if we were stepping through code
 	or	a, a
 	jr	z, MainMenuSetLCDConfig
-	ld	(STEP_MODE), 0				; If so, clear the step mode
-	cp	a, STEP_RETURN				; And maybe continue to the code
-	jp	c, StepCodeSetup
+assert STEP_RETURN = 1
+	dec	a
+	ld	(STEP_MODE), 0				; Clear the step mode
+	call	z, DecreaseCallReturnAddress
+	jr	z, Quit
+	jp	StepCodeSetup				; And continue with debugging
 	
 MainMenuSetLCDConfig:
 	call	SetLCDConfig
@@ -426,9 +429,9 @@ BASICDebuggerKeyWait:
 	cp	a, skEnter
 	jr	z, BASICDebuggerSwitchBreakpoint
 	cp	a, skClear
-	jr	z, BASICDebuggerQuit
+	jr	z, BASICDebuggerRun
 	sub	a, skGraph
-	jr	z, BASICDebuggerQuit
+	jr	z, BASICDebuggerRun
 	dec	a
 	jr	z, BASICDebuggerStepOut
 	dec	a
@@ -468,10 +471,6 @@ BASICDebuggerMoveCursor:
 	call	PrintChar
 	jr	BASICDebuggerDisplayCursor
 	
-BASICDebuggerQuit:
-	ld	(STEP_MODE), STEP_RETURN
-	jp	MainMenu
-	
 BASICDebuggerSwitchBreakpoint:
 	push	bc
 	ld	hl, (DEBUG_LINE_START)
@@ -493,6 +492,9 @@ BASICDebuggerSwitchBreakpoint:
 	pop	bc
 	jr	BASICDebuggerKeyWait
 	
+BASICDebuggerRun:
+	ld	a, STEP_RETURN
+	jr	InsertStepMode
 BASICDebuggerStepOut:
 	ld	a, STEP_OUT
 	jr	InsertStepMode
@@ -517,12 +519,13 @@ InsertStepMode:
 .nobreakpoint:
 
 ; Here we need to check which step mode uses which temp breakpoints:
-;            | Next line | Jump address  | Return address |
-; -----------|-----------|---------------|----------------|
-; Step:      |     0     |        X      |       -1       |
-; Step over: |     0     | X if not call |       -1       |
-; Step next: |     0     |               |                |
-; Step out:  |           |               |     Always     |
+;              | Next line | Jump address  | Return address |
+; -------------|-----------|---------------|----------------|
+; Step return: |     0     |        X      |       -1       |
+; Step:        |     0     |        X      |       -1       |
+; Step over:   |     0     | X if not call |       -1       |
+; Step next:   |     0     |               |                |
+; Step out:    |           |               |     Always     |
 ; 
 ; Jump address options:
 ;   0:  line without jump, call or return
@@ -576,6 +579,9 @@ assert STEP < STEP_NEXT & STEP_OVER < STEP_NEXT
 	call	GetLineFromAddress
 	call	InsertTempBreakpointAtLine
 .return:
+	ld	a, (STEP_MODE)
+	dec	a
+	jp	z, MainMenu
 	jp	Quit
 	
 ; =======================================================================================
