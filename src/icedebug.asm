@@ -951,7 +951,6 @@ NoLabelsFound:
 ; =======================================================================================
 
 InsertTempBreakpointAtLine:
-	inc	(AMOUNT_OF_TEMP_BREAKPOINTS)
 	ld	a, BREAKPOINT_TYPE_TEMP
 	db	006h					; ld b, *
 InsertFixedBreakpointAtLine:
@@ -971,6 +970,10 @@ DoInsertBreakpoint:
 	scf
 	sbc	hl, de
 	ret	c
+	dec	a
+	jr	nz, .fixed
+	inc	(AMOUNT_OF_TEMP_BREAKPOINTS)
+.fixed:
 	ld	ix, BreakpointsStart
 	ld	c, (AMOUNT_OF_BREAKPOINTS)
 	inc	(AMOUNT_OF_BREAKPOINTS)
