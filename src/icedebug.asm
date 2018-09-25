@@ -152,21 +152,7 @@ icedbg_open:
 	
 	ld	iy, iy_base
 	call	SetICEPalette				; Setup the palette
-	
-	ld	a, (AMOUNT_OF_TEMP_BREAKPOINTS)		; If there are temp breakpoints present, remove them
-	or	a, a
-	jr	z, DontRemoveTempBreakpoints
-	ld	c, (AMOUNT_OF_BREAKPOINTS)		; We can safely assume the temp breakpoints are placed at the top of the breakpoints stack
-	ld	b, BREAKPOINT_SIZE
-	mlt	bc
-	ld	ix, BreakpointsStart
-	add	ix, bc
-.loop:	lea	ix, ix - BREAKPOINT_SIZE		; Go back 1 breakpoint
-	ld	a, 1
-	call	RemoveBreakpoint			; And remove it
-	dec	(AMOUNT_OF_TEMP_BREAKPOINTS)
-	jr	nz, .loop
-DontRemoveTempBreakpoints:
+	call	RemoveTempBreakpoints
 	ld	hl, (RESTORE_BREAKPOINT_LINE)		; Check if we need to restore a breakpoint (line != -1)
 	inc	hl
 	add	hl, de
@@ -230,9 +216,9 @@ PrintOptionsLoop:
 	jp	z, SafeExit
 	
 Quit:
-	ld	a, (STEP_MODE)				; If we were stepping, we need to decrease the returning address, because
-							; it was called from a temp breakpoint, where the code is temporarily
-							; replaced with a "call <debugger>", but we do need to run that code.
+	ld	a, (STEP_MODE)				; If we were stepping, we need to decrease the returning address, because it 
+							; was called from a (temp) breakpoint, where the code is temporarily replaced 
+							; with a "call <debugger>", but we do need to run the underlying code.
 	or	a, a
 	call	nz, DecreaseCallReturnAddress
 	call	RestorePaletteUSB			; Restore palette, USB area, LCD control and registers, and return
@@ -253,6 +239,7 @@ StepCodeSetup:
 	call	ClearScreen				; Setup things - this isn't done by the breakpoint handler
 	call	SetLCDConfig
 StepCode:
+	call	RemoveTempBreakpoints
 	ld	hl, (tempSP)				; Get the call return address
 	ld	de, (hl)
 	dec	de
@@ -333,6 +320,7 @@ GetBASICTokenLoopDispColon:
 	jr	z, .nobreakpoint
 	ld	a, 0F8h					; If so, display a dot instead of the colon
 .nobreakpoint:
+	ld	ixl, a					; Never invert it
 	call	PrintChar
 	pop	ix					; We pop ix here to make sure the debug dot isn't highlighted: BreakpointsStart and 0xFF != 1
 GetBASICTokenLoop:
@@ -955,6 +943,22 @@ NoLabelsFound:
 ; =======================================================================================
 ; ============================== Routines are starting here =============================
 ; =======================================================================================
+
+RemoveTempBreakpoints:
+	ld	a, (AMOUNT_OF_TEMP_BREAKPOINTS)		; If there are temp breakpoints present, remove them
+	or	a, a
+	ret	z
+	ld	c, (AMOUNT_OF_BREAKPOINTS)		; We can safely assume the temp breakpoints are placed at the top of the breakpoints stack
+	ld	b, BREAKPOINT_SIZE
+	mlt	bc
+	ld	ix, BreakpointsStart
+	add	ix, bc
+.loop:	lea	ix, ix - BREAKPOINT_SIZE		; Go back 1 breakpoint
+	ld	a, 1
+	call	RemoveBreakpoint			; And remove it
+	dec	(AMOUNT_OF_TEMP_BREAKPOINTS)
+	jr	nz, .loop
+	ret
 
 InsertTempBreakpointAtLine:
 	ld	a, BREAKPOINT_TYPE_TEMP
