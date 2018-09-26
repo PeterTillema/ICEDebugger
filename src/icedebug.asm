@@ -1290,20 +1290,14 @@ PrintByte:
 	rra
 	rra
 	rra
-	and	a, 00Fh
-	cp	a, 10
-	jr	c, .charisnum1
-	add	a, 'A' - '9' - 1
-.charisnum1:
-	add	a, '0'
-	call	PrintChar
+	call	.convert
 	ld	a, d
+.convert:
 	and	a, 00Fh
-	cp	a, 10
-	jr	c, .charisnum2
-	add	a, 'A' - '9' - 1
-.charisnum2:
-	add	a, '0'
+	add	a, 090h
+	daa
+	adc	a, 040h
+	daa
 	
 PrintChar:
 	push	hl
