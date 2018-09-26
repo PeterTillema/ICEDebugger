@@ -112,9 +112,6 @@ DbgVarInRAM:
 	ld	(VARIABLE_START), hl
 	xor	a, a
 	push	hl
-	scf
-	sbc	hl, hl
-	ld	(hl), 2
 	pop	hl
 	ld	b, (hl)					; Amount of variables
 	inc	hl
