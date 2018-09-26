@@ -15,16 +15,20 @@ include_library '../include/fileioc.asm'
 	export icedbg_setup
 	export icedbg_open
 	
+VERSION_MAJOR      := 0
+VERSION_MINOR      := 1
+	
 ICE_VARIABLES      := 0D13F56h				; See src/main.h
 AMOUNT_OF_OPTIONS  := 11
 
 BREAKPOINT_SIZE    := 11
 BREAKPOINT_TYPE    := 0
-BREAKPOINT_TYPE_FIXED  := 0
-BREAKPOINT_TYPE_TEMP   := 1
 BREAKPOINT_LINE    := 1
 BREAKPOINT_ADDRESS := 4
 BREAKPOINT_CODE    := 7
+
+BREAKPOINT_TYPE_FIXED  := 0
+BREAKPOINT_TYPE_TEMP   := 1
 
 STEP_RETURN        := 1
 STEP               := 2
@@ -34,11 +38,10 @@ STEP_OUT           := 5
 	
 icedbg_setup:
 	di
-	ld	iy, iy_base
 	ex	de, hl					; Input is DBG file
 	call	_Mov9ToOP1
 	call	_ChkFindSym				; Find program, must exists
-	ret	c					; Return C if failure
+	jp	c, NoDBGAppvar
 	call	_ChkInRAM
 	ex	de, hl
 	jr	nc, DbgVarInRAM
@@ -50,42 +53,72 @@ icedbg_setup:
 DbgVarInRAM:
 	inc	hl
 	inc	hl
-	ld	(DBG_PROG_START), hl			; HL points to the source program now
+	ld	(DBGProgStart), hl
+	ld	a, (hl)
+	cp	a, VERSION_MAJOR
+	jp	nz, WrongVersion
+	inc	hl
+	ld	a, (hl)
+	cp	a, VERSION_MINOR
+	jp	nz, WrongVersion
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	ld	iy, ProgramsPointers
+.findloop:
+	push	bc
+	push	hl
 	dec	hl
 	call	_Mov9ToOP1
-	ld	a, ProgObj
-	ld	(OP1), a
-	call	_ChkFindSym				; Find debug program, must exists
-	ret	c
+	call	_FindProgSym
+	jp	c, NoSRCProgram
 	call	_ChkInRAM
 	ex	de, hl
-	ld	bc, -1
-	ld	(RESTORE_BREAKPOINT_LINE), bc		; -1 if no restore
-	inc	bc
-	jr	nc, SrcVarInRAM
-	ld	c, 9					; Get data pointer from flash
+	ld	bc, 0
+	jr	nc, .inram
+	ld	c, 9
 	add	hl, bc
 	ld	c, (hl)
 	add	hl, bc
 	inc	hl
-SrcVarInRAM:
-	ld	c, (hl)					; Get size
+.inram:
+	ld	c, (hl)
 	inc	hl
 	ld	b, (hl)
 	inc	hl
-	ld	(PROG_SIZE), bc				; Store pointers
-	ld	(PROG_START), hl
-	ld	hl, (DBG_PROG_START)			; Find the pointer for all debugger options
-	xor	a, a
-	ld	(AMOUNT_OF_BREAKPOINTS), a
-	ld	c, a
-	ld	b, a
-	cpir						; Skip the name
+	ld	(iy), hl
+	ld	(iy + 3), bc
+	lea	iy, iy + 6
+	ex	de, hl
+	call	GetCRC
+	ex	de, hl
+	pop	hl
+	ld	c, 12
+	add	hl, bc
+	ld	a, (hl)
+	cp	a, e
+	jp	nz, CRCNotMatch
+	inc	hl
+	ld	a, (hl)
+	cp	a, d
+	jp	nz, CRCNotMatch
+	inc	hl
+	pop	bc
+	djnz	.findloop
+	ld	iy, iy_base
+	mlt	bc
+	dec	bc
+	ld	(RESTORE_BREAKPOINT_LINE), bc		; -1 if no restore
 	ld	(VARIABLE_START), hl
+	xor	a, a
+	push	hl
+	scf
+	sbc	hl, hl
+	ld	(hl), 2
+	pop	hl
 	ld	b, (hl)					; Amount of variables
 	inc	hl
-	inc	b
-	dec	b
+	cp	a, b
 	jr	z, NoVariablesSkip
 SkipVariableLoop0:
 	ld	c, 255					; Prevent decrementing B; a variable name won't be longer than 255 bytes
@@ -131,6 +164,15 @@ InsertBreakpointLoop:
 	dec	a
 	jr	nz, InsertBreakpointLoop		; Loop through all startup breakpoints
 	pop	ix
+	ret
+
+NoSRCProgram:
+	pop	hl
+CRCNotMatch:
+	pop	bc
+WrongVersion:
+NoDBGAppvar:
+	scf
 	ret
 	
 icedbg_open:
@@ -1108,6 +1150,33 @@ RestorePalette:
 	ld	bc, 4
 	ldir
 	ret
+	
+GetCRC:
+	ld	hl, 000FFFFh
+Read:	
+	ld	a, b
+	or	a, c
+	ret	z
+	push	bc
+	ld	a, (de)
+	inc	de
+	xor	a, h
+	ld	h, a
+	ld	b, 8
+.loop:
+	add.s	hl, hl
+	jr	nc, .next
+	ld	a, h
+	xor	a, 010h
+	ld	h, a
+	ld	a, l
+	xor	a, 021h
+	ld	l, a
+.next:	
+	djnz	.loop
+	pop	bc
+	dec	bc
+	jr	Read
 
 SelectOption:
 ; Inputs:
@@ -1368,6 +1437,9 @@ SlotOptionsString:
 	
 NumbersKeyPresses:
 	db	sk9, sk8, sk7, sk6, sk5, sk4, sk3, sk2, sk1, sk0
+	
+DBGProgStart:
+	dl	0
 
 _DefaultTIFontData:
 ; To get the font data, load font.pf into 8x8 ROM PixelFont Editor, export it as an assembly include file,
@@ -1377,8 +1449,6 @@ include 'font.asm'
 virtual at iy
 	PROG_SIZE:			dl 0
 	PROG_START:			dl 0
-	DBG_PROG_SIZE:			dl 0
-	DBG_PROG_START:			dl 0
 	PALETTE_ENTRIES_BACKUP:		rb 4
 	INPUT_LINE:			dl 0
 	X_POS:				db 0
@@ -1399,6 +1469,9 @@ iy_base db iy_data
 
 BreakpointsStart:
 	rb	BREAKPOINT_SIZE * 100
+	
+ProgramsPointers:
+	rb	30 * (3 + 3)				; 3 for data pointer, 3 for size
 	
 SCREEN_START:
 	rb	lcdWidth * lcdHeight / 8 + 7
