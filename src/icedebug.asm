@@ -618,7 +618,9 @@ PrintVariableLoop:					; Print the on-screen variables
 	call	PrintString				; HL points to the variable name
 	ld	a, ':'
 	call	PrintChar
-	ld	(X_POS), 25
+	ld	(X_POS), 32
+	ld	a, 0F2h					; $
+	call	PrintChar
 	push	hl
 	ld	a, (VariableOffset)			; Advance the variable offset
 	add	a, 3
@@ -626,6 +628,10 @@ PrintVariableLoop:					; Print the on-screen variables
 	ld	ix, ICE_VARIABLES
 VariableOffset = $+2
 	ld	hl, (ix - 080h)
+	push	de
+	call	PrintHexInt				; Print the hex value
+	pop	de
+	ld	(X_POS), 22
 	call	PrintInt				; And print the value!
 	pop	hl
 	call	AdvanceLine
@@ -636,13 +642,13 @@ VariableOffset = $+2
 							; Now we can say the user pressed Enter, so edit the variable
 	push	bc					; Save BC and DE for later
 	push	de
-	ld	(X_POS), 25
+	ld	(X_POS), 22
 	ld	b, 8
 .loop:							; Clear the displayed value
 	xor	a, a
 	call	PrintChar
 	djnz	.loop
-	ld	(X_POS), 25
+	ld	(X_POS), 22
 	ld	de, TempStringData
 	ld	b, 8
 	ld	c, 255 - 4
