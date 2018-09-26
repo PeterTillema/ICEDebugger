@@ -41,10 +41,10 @@ icedbg_setup:
 	ex	de, hl					; Input is DBG file
 	call	_Mov9ToOP1
 	call	_ChkFindSym				; Find program, must exists
-	jp	c, NoDBGAppvar
+	jq	c, NoDBGAppvar
 	call	_ChkInRAM
 	ex	de, hl
-	jr	nc, DbgVarInRAM
+	jq	nc, DbgVarInRAM
 	ld	bc, 9					; Get data pointer from flash
 	add	hl, bc
 	ld	c, (hl)
@@ -56,11 +56,11 @@ DbgVarInRAM:
 	ld	(DBGProgStart), hl
 	ld	a, (hl)
 	cp	a, VERSION_MAJOR
-	jp	nz, WrongVersion
+	jq	nz, WrongVersion
 	inc	hl
 	ld	a, (hl)
 	cp	a, VERSION_MINOR
-	jp	nz, WrongVersion
+	jq	nz, WrongVersion
 	inc	hl
 	ld	b, (hl)
 	inc	hl
@@ -71,11 +71,11 @@ DbgVarInRAM:
 	dec	hl
 	call	_Mov9ToOP1
 	call	_FindProgSym
-	jp	c, NoSRCProgram
+	jq	c, NoSRCProgram
 	call	_ChkInRAM
 	ex	de, hl
 	ld	bc, 0
-	jr	nc, .inram
+	jq	nc, .inram
 	ld	c, 9
 	add	hl, bc
 	ld	c, (hl)
@@ -97,11 +97,11 @@ DbgVarInRAM:
 	add	hl, bc
 	ld	a, (hl)
 	cp	a, e
-	jp	nz, CRCNotMatch
+	jq	nz, CRCNotMatch
 	inc	hl
 	ld	a, (hl)
 	cp	a, d
-	jp	nz, CRCNotMatch
+	jq	nz, CRCNotMatch
 	inc	hl
 	pop	bc
 	djnz	.findloop
@@ -116,7 +116,7 @@ DbgVarInRAM:
 	ld	b, (hl)					; Amount of variables
 	inc	hl
 	cp	a, b
-	jr	z, NoVariablesSkip
+	jq	z, NoVariablesSkip
 SkipVariableLoop0:
 	ld	c, 255					; Prevent decrementing B; a variable name won't be longer than 255 bytes
 	cpir						; Skip variable name
@@ -159,7 +159,7 @@ InsertBreakpointLoop:
 	inc	hl
 	inc	hl
 	dec	a
-	jr	nz, InsertBreakpointLoop		; Loop through all startup breakpoints
+	jq	nz, InsertBreakpointLoop		; Loop through all startup breakpoints
 	pop	ix
 	ret
 
@@ -204,13 +204,13 @@ icedbg_open:
 	ld	(RESTORE_BREAKPOINT_LINE), hl
 	ld	a, (STEP_MODE)				; Check if we were stepping through code
 	or	a, a
-	jr	z, MainMenuSetLCDConfig
+	jq	z, MainMenuSetLCDConfig
 assert STEP_RETURN = 1
 	dec	a
 	ld	(STEP_MODE), 0				; Clear the step mode
 	call	z, DecreaseCallReturnAddress
-	jr	z, Quit
-	jp	StepCodeSetup				; And continue with debugging
+	jq	z, Quit
+	jq	StepCodeSetup				; And continue with debugging
 	
 MainMenuSetLCDConfig:
 	call	SetLCDConfig
@@ -229,30 +229,30 @@ PrintOptionsLoop:
 	ld	d, b
 	ld	c, b
 	call	SelectOption				; And select one of them
-	jr	nz, Quit				; If pressed Quit, quit the debugger
+	jq	nz, Quit				; If pressed Quit, quit the debugger
 
 	ld	a, c
 	call	ClearScreen
 	or	a, a					; Jump to the selected option
-	jr	z, StepCode
+	jq	z, StepCode
 	dec	a
-	jp	z, ViewVariables
+	jq	z, ViewVariables
 	dec	a
-	jp	z, ViewMemory
+	jq	z, ViewMemory
 	dec	a
-	jp	z, ViewStrings
+	jq	z, ViewStrings
 	dec	a
-	jp	z, ViewLists
+	jq	z, ViewLists
 	dec	a
-	jp	z, ViewSlots
+	jq	z, ViewSlots
 	dec	a
-	jp	z, ViewScreen
+	jq	z, ViewScreen
 	dec	a
-	jp	z, ViewBuffer
+	jq	z, ViewBuffer
 	dec	a
-	jp	z, JumpLabel
+	jq	z, JumpLabel
 	dec	a
-	jp	z, SafeExit
+	jq	z, SafeExit
 	
 Quit:
 	ld	a, (STEP_MODE)				; If we were stepping, we need to decrease the returning address, because it 
@@ -295,19 +295,19 @@ StepCode:
 	ld	c, 14					; If current line <= 13 or amount of lines <= 25
 	ld	a, d					;    current line <= 13
 	or	a, a
-	jr	nz, CheckClipBottom
+	jq	nz, CheckClipBottom
 	ld	a, e
 	cp	a, c
-	jr	c, ClipAtTop
+	jq	c, ClipAtTop
 CheckAmountOfLines:
 	ld	c, 26					;    amount of lines <= 25
 	sbc	hl, bc
 	add	hl, bc
-	jr	nc, CheckClipBottom
+	jq	nc, CheckClipBottom
 ClipAtTop:
 	ld	de, 0					;       first line offset = 0
 	ld	ixl, a					;       highlight_line = current line
-	jr	DoDisplayLines				;       Display them code!
+	jq	DoDisplayLines				;       Display them code!
 	
 CheckClipBottom:
 	sbc	hl, de					; Else If amount of lines - current line <= 13
@@ -315,7 +315,7 @@ CheckClipBottom:
 	ld	c, 14
 	sbc	hl, bc
 	add	hl, bc
-	jr	nc, DisplayLinesNormal
+	jq	nc, DisplayLinesNormal
 	add	hl, de
 	ld	a, 25					;    highlight_line = 25 - (amount of lines - current line)
 							;                   = 25 + current line - amount of lines
@@ -326,7 +326,7 @@ CheckClipBottom:
 	ld	hl, 25
 	sbc	hl, de
 	ex	de, hl
-	jr	DoDisplayLines
+	jq	DoDisplayLines
 DisplayLinesNormal:
 	ld	hl, 12					; Else
 	ld	a, l					;    highlight line = 12
@@ -346,7 +346,7 @@ GetBASICTokenLoopDispColon:
 	ld	(Y_POS), a
 	ld	(X_POS), 1				; Always reset X position
 	bit	7, d					; If DE < 0, don't display anything
-	jr	nz, GetBASICTokenLoop
+	jq	nz, GetBASICTokenLoop
 	push	ix					; Line is visible; check whether a breakpoint is placed on this line
 	push	hl
 	push	de
@@ -356,7 +356,7 @@ GetBASICTokenLoopDispColon:
 	pop	de
 	pop	hl
 	ld	a, ':'					; Display the colon
-	jr	z, .nobreakpoint
+	jq	z, .nobreakpoint
 	ld	a, 0F8h					; If so, display a dot instead of the colon
 .nobreakpoint:
 	ld	ixl, a					; Never invert it
@@ -365,15 +365,15 @@ GetBASICTokenLoopDispColon:
 GetBASICTokenLoop:
 	ld	a, b					; Program's done!
 	or	a, c
-	jr	z, BASICProgramDone
+	jq	z, BASICProgramDone
 	ld	a, (hl)					; Check if it's an enter, if so, we need to advance a line
 	cp	a, tEnter
-	jr	z, AdvanceBASICLine
+	jq	z, AdvanceBASICLine
 	bit	7, d					; Out of screen, no need to be displayed
-	jr	nz, DontDisplayToken
+	jq	nz, DontDisplayToken
 	ld	a, (X_POS)				; Out of screen as well, stop displaying the tokens left on this line
 	cp	a, 40
-	jr	z, DontDisplayToken
+	jq	z, DontDisplayToken
 	push	bc					; If the token is visible, convert to characters and display it
 	push	de
 	push	hl
@@ -391,21 +391,21 @@ DontDisplayToken:
 	call	_IsA2ByteTok
 	inc	hl
 	dec	bc
-	jr	nz, GetBASICTokenLoop
+	jq	nz, GetBASICTokenLoop
 	inc	hl
 	dec	bc
-	jr	GetBASICTokenLoop
+	jq	GetBASICTokenLoop
 AdvanceBASICLine:
 	ld	a, (Y_POS)				; If DE < 0, Y_POS + 9 -> Y_POS
 	bit	7, d
-	jr	nz, .cont
+	jq	nz, .cont
 	dec	ixl
 	add	a, 9
 .cont:	inc	de					; Always increase DE
 	inc	hl
 	dec	bc
 	cp	a, 229 - 7				; Display until the 25th row
-	jr	c, GetBASICTokenLoopDispColon
+	jq	c, GetBASICTokenLoopDispColon
 BASICProgramDone:
 	ld	ixl, 1					; Prevent anything else to be displayed inverted
 	ld	hl, SCREEN_START - 1			; Location to draw a black line
@@ -450,31 +450,31 @@ BASICDebuggerDisplayCursor:
 BASICDebuggerKeyWait:
 	call	GetKeyAnyFast				; Wait until any key is pressed
 	cp	a, skUp
-	jr	z, BASICDebuggerKeyUp
+	jq	z, BASICDebuggerKeyUp
 	cp	a, skDown
-	jr	z, BASICDebuggerKeyDown
+	jq	z, BASICDebuggerKeyDown
 	cp	a, skEnter
-	jr	z, BASICDebuggerSwitchBreakpoint
+	jq	z, BASICDebuggerSwitchBreakpoint
 	cp	a, skClear
-	jr	z, BASICDebuggerRun
+	jq	z, BASICDebuggerRun
 	sub	a, skGraph
-	jr	z, BASICDebuggerRun
+	jq	z, BASICDebuggerRun
 	dec	a
-	jr	z, BASICDebuggerStepOut
+	jq	z, BASICDebuggerStepOut
 	dec	a
-	jr	z, BASICDebuggerStepNext
+	jq	z, BASICDebuggerStepNext
 	dec	a
-	jr	z, BASICDebuggerStepOver
+	jq	z, BASICDebuggerStepOver
 	dec	a
-	jr	z, BASICDebuggerStep
-	jr	BASICDebuggerKeyWait
+	jq	z, BASICDebuggerStep
+	jq	BASICDebuggerKeyWait
 	
 BASICDebuggerKeyUp:
 	ld	a, c
 	or	a, a
-	jr	z, BASICDebuggerKeyWait
+	jq	z, BASICDebuggerKeyWait
 	dec	c
-	jr	BASICDebuggerMoveCursor
+	jq	BASICDebuggerMoveCursor
 BASICDebuggerKeyDown:
 	ld	b, 25
 	ld	hl, (LINES_START)
@@ -482,21 +482,21 @@ BASICDebuggerKeyDown:
 	dec	hl
 	ld	a, h
 	or	a, a
-	jr	nz, .docheck
+	jq	nz, .docheck
 	ld	a, b
 	cp	a, l
-	jr	c, .docheck
+	jq	c, .docheck
 	ld	b, l
 .docheck:
 	ld	a, b
 	cp	a, c
-	jr	z, BASICDebuggerKeyWait
+	jq	z, BASICDebuggerKeyWait
 	inc	c
 BASICDebuggerMoveCursor:
 	dec	(X_POS)
 	xor	a, a
 	call	PrintChar
-	jr	BASICDebuggerDisplayCursor
+	jq	BASICDebuggerDisplayCursor
 	
 BASICDebuggerSwitchBreakpoint:
 	push	bc
@@ -505,10 +505,10 @@ BASICDebuggerSwitchBreakpoint:
 	mlt	bc
 	add	hl, bc
 	call	IsBreakpointAtLine
-	jr	z, .insert
+	jq	z, .insert
 	call	RemoveBreakpointFromLine
 	ld	a, ':'
-	jr	.dispchar
+	jq	.dispchar
 .insert:
 	call	InsertFixedBreakpointAtLine
 	ld	a, 0F8h
@@ -517,20 +517,20 @@ BASICDebuggerSwitchBreakpoint:
 	call	PrintChar
 	dec	(X_POS)
 	pop	bc
-	jr	BASICDebuggerKeyWait
+	jq	BASICDebuggerKeyWait
 	
 BASICDebuggerRun:
 	ld	a, STEP_RETURN
-	jr	InsertStepMode
+	jq	InsertStepMode
 BASICDebuggerStepOut:
 	ld	a, STEP_OUT
-	jr	InsertStepMode
+	jq	InsertStepMode
 BASICDebuggerStepNext:
 	ld	a, STEP_NEXT
-	jr	InsertStepMode
+	jq	InsertStepMode
 BASICDebuggerStepOver:
 	ld	a, STEP_OVER
-	jr	InsertStepMode
+	jq	InsertStepMode
 BASICDebuggerStep:
 	ld	a, STEP
 InsertStepMode:
@@ -540,7 +540,7 @@ InsertStepMode:
 	ld	(RESTORE_BREAKPOINT_LINE), hl
 	ld	hl, (DEBUG_CURRENT_LINE)
 	call	IsBreakpointAtLine			; If a breakpoint is placed at this line, we need to temporarily remove it
-	jr	z, .nobreakpoint
+	jq	z, .nobreakpoint
 	ld	(RESTORE_BREAKPOINT_LINE), hl
 	call	RemoveBreakpointFromLine
 .nobreakpoint:
@@ -561,7 +561,7 @@ InsertStepMode:
 
 	ld	a, (STEP_MODE)
 	cp	a, STEP_OUT
-	jr	z, .insertreturnaddr
+	jq	z, .insertreturnaddr
 	ld	hl, (DEBUG_CURRENT_LINE)		; Insert temp breakpoint at the line after this one
 	inc	hl
 	call	InsertTempBreakpointAtLine
@@ -578,15 +578,15 @@ InsertStepMode:
 	add	hl, de					; If it's zero, don't do anything with it
 	or	a, a
 	sbc	hl, de
-	jr	z, .return
+	jq	z, .return
 	inc	hl					; If it's not a -1, it's a real jump
 	add	hl, de
 	or	a, a
 	sbc	hl, de
-	jr	nz, .insertjump
+	jq	nz, .insertjump
 	ld	a, (STEP_MODE)
 	cp	a, STEP_NEXT
-	jr	z, .return
+	jq	z, .return
 .insertreturnaddr:
 	ld	hl, (tempSP)				; It's -1, so the line is a Return -> place temp breakpoint at return address
 	inc	hl
@@ -595,12 +595,12 @@ InsertStepMode:
 	ld	de, (hl)				; Return address
 	call	GetLineFromAddress
 	call	InsertTempBreakpointAtLine
-	jr	.return
+	jq	.return
 .insertjump:
 	ld	a, (STEP_MODE)
 assert STEP < STEP_NEXT & STEP_OVER < STEP_NEXT
 	cp	a, STEP_NEXT
-	jr	nc, .return
+	jq	nc, .return
 	dec	hl					; Place temp breakpoint at the jump address
 	ex	de, hl
 	call	GetLineFromAddress
@@ -608,21 +608,21 @@ assert STEP < STEP_NEXT & STEP_OVER < STEP_NEXT
 .return:
 	ld	a, (STEP_MODE)
 	dec	a
-	jp	z, MainMenu
-	jp	Quit
+	jq	z, MainMenu
+	jq	Quit
 	
 ; =======================================================================================
 ViewVariables:
 	ld	hl, (VARIABLE_START)			; Get amount of variables
 	xor	a, a
 	cp	a, (hl)
-	jr	nz, FoundVariables
+	jq	nz, FoundVariables
 	call	GetKeyAnyFast				; If none found, wait and return
-	jp	MainMenu
+	jq	MainMenu
 FoundVariables:
 	ld	d, a					; D = start offset of selected item in list
 	ld	c, a					; C = currently selected variable
-	jr	DontClearVariablesScreen
+	jq	DontClearVariablesScreen
 PrintAllVariables:
 	exx						; Clear the screen to display all variables again
 	call	ClearScreen
@@ -634,7 +634,7 @@ DontClearVariablesScreen:
 	ld	b, 26					; B = amount of variables to display
 	ld	a, b					; Check if we have more than 26 variables
 	cp	a, e
-	jr	c, MoreThan26Variables
+	jq	c, MoreThan26Variables
 	ld	b, e					; If not, display E variables max
 MoreThan26Variables:
 	ld	(Y_POS), 1				; We start displaying at the top of the screen
@@ -645,7 +645,7 @@ MoreThan26Variables:
 	ld	(VariableOffset), a
 	xor	a, a					; Check if we need to skip any variables after scrolling down
 	cp	a, d
-	jr	z, PrintVariableLoop
+	jq	z, PrintVariableLoop
 	push	bc
 	ld	b, d					; B = amount of variables to skip
 .loop:	ld	c, 255					; Every variable name < 255 characters, so B won't get overwritten with cpir
@@ -676,8 +676,8 @@ VariableOffset = $+2
 	call	AdvanceLine
 	djnz	PrintVariableLoop
 	call	SelectOption				; Select a variable from the list
-	jr	nc, PrintAllVariables			; If we need to scroll, display it all over again
-	jp	nz, MainMenu				; We pressed Clear, so return
+	jq	nc, PrintAllVariables			; If we need to scroll, display it all over again
+	jq	nz, MainMenu				; We pressed Clear, so return
 							; Now we can say the user pressed Enter, so edit the variable
 	push	bc					; Save BC and DE for later
 	push	de
@@ -698,11 +698,11 @@ GetVariableNumberLoop:					; Wait for a number/Enter to be pressed
 	push	bc
 	call	GetKeyAnyFast
 	cp	a, skEnter				; We pressed Enter so get the value and replace it
-	jr	z, GetVariableNewNumber
+	jq	z, GetVariableNewNumber
 	ld	hl, NumbersKeyPresses
 	ld	bc, 10
 	cpir
-	jr	nz, GetVariableNumberLoop
+	jq	nz, GetVariableNumberLoop
 	dec	(X_POS)					; If a number is pressed, display it and the cursor again
 	ld	a, c
 	add	a, '0'
@@ -720,7 +720,7 @@ GetVariableNewNumber:
 GetNumberCharLoop:
 	ld	a, (de)
 	or	a, a
-	jr	z, OverwriteVariable			; We got the number, so actually replace the variable
+	jq	z, OverwriteVariable			; We got the number, so actually replace the variable
 	sub	a, '0'
 	add	hl, hl					; Num * 10
 	push	hl
@@ -732,7 +732,7 @@ GetNumberCharLoop:
 	ld	c, a
 	add	hl, bc
 	inc	de
-	jr	GetNumberCharLoop
+	jq	GetNumberCharLoop
 OverwriteVariable:
 	pop	de					; Restore BC and DE
 	pop	bc
@@ -746,7 +746,7 @@ OverwriteVariable:
 	ld	ix, ICE_VARIABLES
 VariableOffset2 = $+2
 	ld	(ix - 080h), hl				; And store it!
-	jp	PrintAllVariables			; Display all the variables again
+	jq	PrintAllVariables			; Display all the variables again
 	
 ; =======================================================================================
 ViewMemory:						; Only static thing for now!
@@ -776,27 +776,27 @@ MemoryDrawLineOfChars:
 	ld	a, (hl)
 	inc	hl
 	or	a, a
-	jr	nz, .charnonzero
+	jq	nz, .charnonzero
 	ld	a, '.'
 .charnonzero:
 	cp	a, 0F4h
-	jr	c, .chartoolarge
+	jq	c, .chartoolarge
 	ld	a, '.'
 .chartoolarge:
 	call	PrintChar
 	djnz	MemoryDrawLineOfChars
 	dec	c
-	jr	nz, MemoryDrawLine
+	jq	nz, MemoryDrawLine
 	call	GetKeyAnyFast
-	jp	MainMenu
+	jq	MainMenu
 	
 ; =======================================================================================
 ViewStrings:
-	jp	MainMenu
+	jq	MainMenu
 
 ; =======================================================================================
 ViewLists:
-	jp	MainMenu
+	jq	MainMenu
 	
 ; =======================================================================================
 ViewSlots:
@@ -821,7 +821,7 @@ GetSlotLoop:
 	ld	d, h					; If the size = -1, the slot is closed, so don't display anything
 	ld	e, l
 	add	hl, hl
-	jr	c, SlotIsClosed
+	jq	c, SlotIsClosed
 	ex.s	de, hl
 	call	PrintInt				; Otherwise, display it
 	ld	(X_POS), 5				; Get the variable type and display it
@@ -835,7 +835,7 @@ GetSlotLoop:
 	call	ti_IsArchived
 	ld	a, l
 	or	a, a
-	jr	z, .notarchived
+	jq	z, .notarchived
 	ld	a, '*'					; If so, display a * in front of it
 	call	PrintChar
 .notarchived:
@@ -856,9 +856,9 @@ SlotIsClosed:						; Loop through all slots
 	pop	bc
 	inc	c
 	dec	b
-	jp	nz, GetSlotLoop
+	jq	nz, GetSlotLoop
 	call	GetKeyAnyFast				; Wait for any key to be pressed and return to main menu
-	jp	MainMenu
+	jq	MainMenu
 	
 ; =======================================================================================
 ViewScreen:
@@ -874,7 +874,7 @@ ViewScreen:
 	call	RestorePalette				; Don't forget to restore the palette as well
 	call	GetKeyAnyFast				; Wait for any key to be pressed
 	call	SetICEPalette				; Restore palette and return to main menu while setting the right LCD config
-	jp	MainMenuSetLCDConfig
+	jq	MainMenuSetLCDConfig
 	
 ; =======================================================================================
 ViewBuffer:
@@ -887,7 +887,7 @@ ViewBuffer:
 	call	RestorePalette				; Restore palette
 	call	GetKeyAnyFast				; Wait for any key to be pressed
 	call	SetICEPalette				; Restore palette and return to main menu while setting the right LCD config
-	jp	MainMenuSetLCDConfig
+	jq	MainMenuSetLCDConfig
 	
 ; =======================================================================================
 SafeExit:
@@ -897,7 +897,7 @@ SafeExit:
 	ld	de, ramStart
 	or	a, a
 	sbc	hl, de
-	jr	nc, .pop
+	jq	nc, .pop
 	add	hl, de					; Don't forget to return to that address
 	push	hl
 	ld	a, lcdBpp16				; Set right LCD control
@@ -907,7 +907,7 @@ SafeExit:
 	ld	(mpLcdUpbase), hl
 	call	RestorePaletteUSB			; Restore palette and USB area
 	ld	iy, flags				; And display a fancy status bar
-	jp	_DrawStatusBar
+	jq	_DrawStatusBar
 	
 ; =======================================================================================
 JumpLabel:
@@ -918,7 +918,7 @@ JumpLabel:
 	ld	hl, (LABELS_START)			; Get amount of labels
 	xor	a, a
 	cp	a, (hl)
-	jr	z, NoLabelsFound			; If no labels found, return to main menu
+	jq	z, NoLabelsFound			; If no labels found, return to main menu
 	ld	d, a					; D = start offset of selected item in list
 	ld	c, a					; C = currently selected label
 PrintAllLabels:						; Clear the screen to display all label again
@@ -931,13 +931,13 @@ PrintAllLabels:						; Clear the screen to display all label again
 	ld	b, 26					; B = amount of labels to be displayed
 	ld	a, b					; Display no more than 26 labels
 	cp	a, e
-	jr	c, MoreThan26Labels
+	jq	c, MoreThan26Labels
 	ld	b, e
 MoreThan26Labels:
 	ld	(Y_POS), 1
 	xor	a, a					; Check if we need to skip any label
 	cp	a, d
-	jr	z, PrintLabelLoop
+	jq	z, PrintLabelLoop
 	push	bc
 	ld	b, d
 .skip:
@@ -957,13 +957,13 @@ PrintLabelLoop:
 	call	AdvanceLine
 	djnz	PrintLabelLoop
 	call	SelectOption				; Select a label from the menu
-	jr	nc, PrintAllLabels			; We need to scroll, so display it over again
-	jp	nz, MainMenu				; The user pressed Clear, so return to main menu
+	jq	nc, PrintAllLabels			; We need to scroll, so display it over again
+	jq	nz, MainMenu				; The user pressed Clear, so return to main menu
 	ld	hl, (LABELS_START)			; Here the user pressed Enter, so immediately jump to that label
 	inc	hl
 	ld	a, d					; Get selected label
 	add	a, c
-	jr	z, GetLabelAddress
+	jq	z, GetLabelAddress
 	ld	e, a					; How much labels do we need to skip?
 	xor	a, a
 	ld	b, a
@@ -974,16 +974,16 @@ SkipLabelsLoop:
 	inc	hl
 	inc	hl
 	dec	e
-	jr	nz, SkipLabelsLoop
+	jq	nz, SkipLabelsLoop
 GetLabelAddress:
 	cpir						; Skip over the current label name
 	ld	de, (hl)				; Get the address
 	ld	hl, (tempSP)				; And write it to the return addresss
 	ld	(hl), de
-	jp	Quit
+	jq	Quit
 NoLabelsFound:
 	call	GetKeyAnyFast
-	jp	MainMenu
+	jq	MainMenu
 	
 ; =======================================================================================
 ; ============================== Routines are starting here =============================
@@ -1002,7 +1002,7 @@ RemoveTempBreakpoints:
 	ld	a, 1
 	call	RemoveBreakpoint			; And remove it
 	dec	(AMOUNT_OF_TEMP_BREAKPOINTS)
-	jr	nz, .loop
+	jq	nz, .loop
 	ret
 
 InsertTempBreakpointAtLine:
@@ -1015,7 +1015,7 @@ InsertBreakpointAtLine:
 	ld	b, a
 	call	IsBreakpointAtLine
 	ld	a, b
-	jr	z, DoInsertBreakpoint
+	jq	z, DoInsertBreakpoint
 	or	a, a
 	ret	z
 DoInsertBreakpoint:
@@ -1026,7 +1026,7 @@ DoInsertBreakpoint:
 	sbc	hl, de
 	ret	c
 	dec	a
-	jr	nz, .fixed
+	jq	nz, .fixed
 	inc	(AMOUNT_OF_TEMP_BREAKPOINTS)
 .fixed:
 	ld	ix, BreakpointsStart
@@ -1104,7 +1104,7 @@ GetLineFromAddress:
 	sbc	hl, de
 	pop	hl
 	exx
-	jr	nc, .loop
+	jq	nc, .loop
 	ret
 
 IsBreakpointAtLine:
@@ -1123,10 +1123,10 @@ IsBreakpointAtLine:
 	or	a, a
 	sbc	hl, de
 	add	hl, de
-	jr	z, .found
+	jq	z, .found
 	lea	ix, ix + BREAKPOINT_SIZE
 	dec	a
-	jr	nz, .loop
+	jq	nz, .loop
 	ret
 .found:	dec	a
 	inc	a
@@ -1162,7 +1162,7 @@ Read:
 	ld	b, 8
 .loop:
 	add.s	hl, hl
-	jr	nc, .next
+	jq	nc, .next
 	ld	a, h
 	xor	a, 010h
 	ld	h, a
@@ -1173,7 +1173,7 @@ Read:
 	djnz	.loop
 	pop	bc
 	dec	bc
-	jr	Read
+	jq	Read
 
 SelectOption:
 ; Inputs:
@@ -1202,34 +1202,34 @@ PrintCursor:
 CheckKeyLoop:
 	call	GetKeyAnyFast
 	cp	a, skEnter
-	jr	z, PressedEnter
+	jq	z, PressedEnter
 	cp	a, skClear
-	jr	z, PressedClear
+	jq	z, PressedClear
 	cp	a, skDown
-	jr	z, MoveCursorDown
+	jq	z, MoveCursorDown
 	cp	a, skUp
-	jr	nz, CheckKeyLoop
+	jq	nz, CheckKeyLoop
 MoveCursorUp:
 	ld	a, c
 	add	a, d
-	jr	z, CheckKeyLoop
+	jq	z, CheckKeyLoop
 	sub	a, d
-	jr	z, PressedUp
+	jq	z, PressedUp
 	dec	c
-	jr	EraseCursor
+	jq	EraseCursor
 MoveCursorDown:
 	ld	a, c
 	add	a, d
 	cp	a, e
-	jr	z, CheckKeyLoop
+	jq	z, CheckKeyLoop
 	ld	a, c
 	cp	a, 25
-	jr	z, PressedDown
+	jq	z, PressedDown
 	inc	c
 EraseCursor:
 	xor	a, a
 	call	PrintChar
-	jr	PrintCursor
+	jq	PrintCursor
 PressedEnter:
 	scf
 	ret
@@ -1308,7 +1308,7 @@ GetKeyAnyFast:
 .loop:
 	call	_GetCSC
 	or	a, a
-	jr	z, .loop
+	jq	z, .loop
 	pop	iy
 	pop	ix
 	di
@@ -1331,7 +1331,7 @@ DivideLoop:
 	add	a, '0'
 	ld	(de), a
 	sbc	hl, de
-	jr	nz, DivideLoop
+	jq	nz, DivideLoop
 	ex	de, hl
 	pop	de
 	
@@ -1341,7 +1341,7 @@ PrintString:
 	inc	hl
 	ret	z
 	call	PrintChar
-	jr	PrintString
+	jq	PrintString
 	
 PrintHexInt:
 	call	_SetAToHLU
@@ -1372,7 +1372,7 @@ PrintChar:
 	ld	c, a
 	ld	a, (X_POS)
 	cp	a, 40
-	jr	z, DontDisplayChar
+	jq	z, DontDisplayChar
 	or	a, a
 	sbc	hl, hl
 	ld	l, a
@@ -1398,7 +1398,7 @@ PutCharLoop:
 	ld	a, ixl
 	or	a, a
 	ld	a, (hl)
-	jr	nz, .notinvert
+	jq	nz, .notinvert
 	cpl
 .notinvert:
 	ld	(de), a
@@ -1408,7 +1408,7 @@ PutCharLoop:
 	add	hl, bc
 	ex	de, hl
 	dec	ixh
-	jr	nz, PutCharLoop
+	jq	nz, PutCharLoop
 DontDisplayChar:
 	pop	bc
 	pop	de
