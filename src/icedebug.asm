@@ -30,6 +30,13 @@ BREAKPOINT_CODE    := 7
 BREAKPOINT_TYPE_FIXED  := 0
 BREAKPOINT_TYPE_TEMP   := 1
 
+SUBPROGRAM_SIZE    := 16
+SUBPROGRAM_NAME    := 0
+SUBPROGRAM_START   := 8
+SUBPROGRAM_END     := 10
+SUBPROGRAM_LINES   := 12
+SUBPROGRAM_CRC     := 14
+
 STEP_RETURN        := 1
 STEP               := 2
 STEP_OVER          := 3
@@ -37,7 +44,6 @@ STEP_NEXT          := 4
 STEP_OUT           := 5
 	
 icedbg_setup:
-	di
 	ex	de, hl					; Input is DBG file
 	call	_Mov9ToOP1
 	call	_ChkFindSym				; Find program, must exists
@@ -62,6 +68,7 @@ DbgVarInRAM:
 	cp	a, VERSION_MINOR
 	jq	nz, WrongVersion
 	inc	hl
+	ld	(SUBPROGRAMS_START - iy + iy_base), hl		; Sorry, I can't use iy!
 	ld	b, (hl)
 	inc	hl
 	ld	iy, ProgramsPointers
@@ -93,7 +100,7 @@ DbgVarInRAM:
 	call	GetCRC
 	ex	de, hl
 	pop	hl
-	ld	c, 12
+	ld	c, SUBPROGRAM_CRC
 	add	hl, bc
 	ld	a, (hl)
 	cp	a, e
@@ -106,7 +113,7 @@ DbgVarInRAM:
 	pop	bc
 	djnz	.findloop
 	ld	iy, iy_base
-	mlt	bc
+	ld	c, b
 	dec	bc
 	ld	(RESTORE_BREAKPOINT_LINE), bc		; -1 if no restore
 	ld	(VARIABLE_START), hl
@@ -287,12 +294,88 @@ StepCode:
 	dec	de					; DE = call address
 	call	GetLineFromAddress			; Get the line number
 	ld	(DEBUG_CURRENT_LINE), hl
-	ex	de, hl					; DE = line_numer
-	ld	hl, (LINES_START)			; Pointer to line data
-	ld	hl, (hl)				; HL = amount of lines
+	ex	de, hl					; DE = input line number
 	
-	inc	bc					; BC = -1 from GetLineFromAddress
-	ld	c, 14					; If current line <= 13 or amount of lines <= 25
+; Get relative line in (sub)program: 
+; 
+;unmangleLine(mangledLine)
+;  startLine = 1
+;  while (sourceProgramsRemain())
+;    prog = nextSourceProgram()
+;    if (mangledLine < prog.startLine)
+;      break
+;    else if (mangledLine < prog.endLine)
+;      startLine = prog.startLine
+;    else
+;      startLine += prog.end_line - prog.startLine
+;  return mangledLine - startLine + 1
+
+	ld	ix, ProgramsPointers - 6
+	ld	iy, (SUBPROGRAMS_START)
+	ld	bc, 1					; BC = startLine
+	ld	a, (iy)
+	lea	iy, iy + 1 - SUBPROGRAM_SIZE
+.loop:
+	lea	ix, ix + 6
+	lea	iy, iy + SUBPROGRAM_SIZE
+	ld	hl, (iy + SUBPROGRAM_START)
+	scf
+	sbc.s	hl, de
+	jr	nc, .found
+	ld	hl, (iy + SUBPROGRAM_END)
+	scf
+	sbc.s	hl, de
+	jr	c, .lastcheck
+	ld	bc, (iy + SUBPROGRAM_START)
+	jr	.advance
+.lastcheck:
+	add	hl, de
+	push	de
+	ld	de, (iy + SUBPROGRAM_START)
+	pop	de
+	or	a, a
+	sbc.s	hl, de
+	add.s	hl, bc
+	push	hl
+	pop	bc
+.advance:
+	dec	a
+	jr	nz, .loop
+	jr	.getprogram
+.found:
+	lea	ix, ix - 6
+	lea	iy, iy - SUBPROGRAM_SIZE
+.getprogram:
+	lea	hl, iy + SUBPROGRAM_NAME		; Pointer to progrm name
+	push	hl
+	ex	de, hl
+	or	a, a
+	sbc	hl, bc					; HL = line number of local program
+	ld	de, (iy + SUBPROGRAM_LINES)		; DE = amount of lines
+	ex.s	de, hl
+	ld	iy, iy_base
+	ld	(DEBUG_AMOUNT_OF_LINES), hl
+	ld	bc, (ix + 0)				; Pointer to program data
+	ld	(PROG_START), bc
+	ld	bc, (ix + 3)				; BC = size of program data
+	ld	(PROG_SIZE), bc
+	exx						; Backup all registers
+	ld	(X_POS), 1
+	ld	(Y_POS), 1
+	ld	hl, ProgramString
+	call	PrintString
+	pop	hl					; Display program name
+	ld	b, 8
+.progloop:
+	ld	a, (hl)
+	or	a, a
+	jr	z, .done
+	call	PrintChar
+	inc	hl
+	djnz	.progloop
+.done:
+	exx
+	ld	bc, 14					; If current line <= 13 or amount of lines <= 24
 	ld	a, d					;    current line <= 13
 	or	a, a
 	jq	nz, CheckClipBottom
@@ -300,7 +383,7 @@ StepCode:
 	cp	a, c
 	jq	c, ClipAtTop
 CheckAmountOfLines:
-	ld	c, 26					;    amount of lines <= 25
+	ld	c, 25					;    amount of lines <= 24
 	sbc	hl, bc
 	add	hl, bc
 	jq	nc, CheckClipBottom
@@ -317,13 +400,13 @@ CheckClipBottom:
 	add	hl, bc
 	jq	nc, DisplayLinesNormal
 	add	hl, de
-	ld	a, 25					;    highlight_line = 25 - (amount of lines - current line)
-							;                   = 25 + current line - amount of lines
+	ld	a, 24					;    highlight_line = 24 - (amount of lines - current line)
+							;                   = 24 + current line - amount of lines
 	add	a, e
 	sub	a, l
 	ld	ixl, a
-	ex	de, hl					;    first line offset = 25 - amount of lines
-	ld	hl, 25
+	ex	de, hl					;    first line offset = 24 - amount of lines
+	ld	hl, 24
 	sbc	hl, de
 	ex	de, hl
 	jq	DoDisplayLines
@@ -339,7 +422,7 @@ DoDisplayLines:						; IXL = amount of lines before highlighted line
 	sbc	hl, hl
 	sbc	hl, de					; DE = offset to first displayed line
 	ld	(DEBUG_LINE_START), hl			; ~DE = first displayed line number
-	ld	a, 1					; Starting Y position
+	ld	a, 10					; Starting Y position
 	ld	hl, (PROG_START)			; HL = pointer to source program data
 	ld	bc, (PROG_SIZE)				; BC = length of program data
 GetBASICTokenLoopDispColon:
@@ -435,7 +518,7 @@ FillBlackRowLoop:					; Fill a horizontal line with black
 	ld	(X_POS), 0
 	ld	hl, StepString
 	call	PrintString
-	ld	c, 0
+	ld	c, 1
 BASICDebuggerDisplayCursor:
 	ld	a, c
 	add	a, a
@@ -471,15 +554,13 @@ BASICDebuggerKeyWait:
 	
 BASICDebuggerKeyUp:
 	ld	a, c
-	or	a, a
+	dec	a
 	jq	z, BASICDebuggerKeyWait
 	dec	c
 	jq	BASICDebuggerMoveCursor
 BASICDebuggerKeyDown:
-	ld	b, 25
-	ld	hl, (LINES_START)
-	ld	hl, (hl)
-	dec	hl
+	ld	b, 24
+	ld	hl, (DEBUG_AMOUNT_OF_LINES)
 	ld	a, h
 	or	a, a
 	jq	nz, .docheck
@@ -499,24 +580,24 @@ BASICDebuggerMoveCursor:
 	jq	BASICDebuggerDisplayCursor
 	
 BASICDebuggerSwitchBreakpoint:
-	push	bc
-	ld	hl, (DEBUG_LINE_START)
-	ld	b, 1
-	mlt	bc
-	add	hl, bc
-	call	IsBreakpointAtLine
-	jq	z, .insert
-	call	RemoveBreakpointFromLine
-	ld	a, ':'
-	jq	.dispchar
-.insert:
-	call	InsertFixedBreakpointAtLine
-	ld	a, 0F8h
-.dispchar:
-	ld	(X_POS), 1
-	call	PrintChar
-	dec	(X_POS)
-	pop	bc
+;	push	bc
+;	ld	hl, (DEBUG_LINE_START)
+;	ld	b, 1
+;	mlt	bc
+;	add	hl, bc
+;	call	IsBreakpointAtLine
+;	jq	z, .insert
+;	call	RemoveBreakpointFromLine
+;	ld	a, ':'
+;	jq	.dispchar
+;.insert:
+;	call	InsertFixedBreakpointAtLine
+;	ld	a, 0F8h
+;.dispchar:
+;	ld	(X_POS), 1
+;	call	PrintChar
+;	dec	(X_POS)
+;	pop	bc
 	jq	BASICDebuggerKeyWait
 	
 BASICDebuggerRun:
@@ -1259,6 +1340,8 @@ ClearScreen:
 	inc	de
 	ld	bc, lcdWidth * lcdHeight / 8 - 1
 	ldir
+	ld	(X_POS), 0
+	ld	(Y_POS), 0
 	ret
 	
 SetLCDConfig:
@@ -1431,6 +1514,8 @@ StepString:
 	db	"Step  StepOver   StepNext  StepOut  Quit", 0
 SlotOptionsString:
 	db	"Slot Type Name      DataPtr Size  Offset", 0
+ProgramString:
+	db	"Program: ", 0
 	
 NumbersKeyPresses:
 	db	sk9, sk8, sk7, sk6, sk5, sk4, sk3, sk2, sk1, sk0
@@ -1443,13 +1528,14 @@ _DefaultTIFontData:
 ; and replace the regex "0x(..)" with "0\1h" to make it fasmg-compatible
 include 'font.asm'
 
-virtual at iy
+iy_base: org iy
 	PROG_SIZE:			dl 0
 	PROG_START:			dl 0
 	PALETTE_ENTRIES_BACKUP:		rb 4
 	INPUT_LINE:			dl 0
 	X_POS:				db 0
 	Y_POS:				db 0
+	SUBPROGRAMS_START:              dl 0
 	VARIABLE_START:			dl 0
 	LINES_START:			dl 0
 	STARTUP_BREAKPOINTS:		dl 0
@@ -1457,18 +1543,17 @@ virtual at iy
 	AMOUNT_OF_BREAKPOINTS:		db 0
 	DEBUG_CURRENT_LINE:		dl 0
 	DEBUG_LINE_START:		dl 0
+	DEBUG_AMOUNT_OF_LINES:		dl 0
 	STEP_MODE:			db 0
 	AMOUNT_OF_TEMP_BREAKPOINTS:	db 0
 	RESTORE_BREAKPOINT_LINE:	dl 0
-	load iy_data: $ - $$ from $$
-end virtual
-iy_base db iy_data
+org iy_base + $ - $$
 
 BreakpointsStart:
 	rb	BREAKPOINT_SIZE * 100
 	
 ProgramsPointers:
-	rb	30 * (3 + 3)				; 3 for data pointer, 3 for size
+	rb	50 * (3 + 3)				; 3 for data pointer, 3 for size
 	
 SCREEN_START:
 	rb	lcdWidth * lcdHeight / 8 + 7
