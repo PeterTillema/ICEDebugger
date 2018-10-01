@@ -30,12 +30,12 @@ BREAKPOINT_CODE    := 7
 BREAKPOINT_TYPE_FIXED  := 0
 BREAKPOINT_TYPE_TEMP   := 1
 
-SUBPROGRAM_SIZE    := 16
+SUBPROGRAM_SIZE    := 15
 SUBPROGRAM_NAME    := 0
 SUBPROGRAM_START   := 8
 SUBPROGRAM_END     := 10
-SUBPROGRAM_LINES   := 12
-SUBPROGRAM_CRC     := 14
+SUBPROGRAM_DEPTH   := 12
+SUBPROGRAM_CRC     := 13
 
 STEP_RETURN        := 1
 STEP               := 2
@@ -44,6 +44,10 @@ STEP_NEXT          := 4
 STEP_OUT           := 5
 	
 icedbg_setup:
+	push	de
+	call	_HomeUp
+	call	_ClrLCDFull
+	pop	de
 	ex	de, hl					; Input is DBG file
 	call	_Mov9ToOP1
 	call	_ChkFindSym				; Find program, must exists
@@ -77,6 +81,8 @@ DbgVarInRAM:
 	push	hl
 	dec	hl
 	call	_Mov9ToOP1
+	ex	de, hl
+	ld	(hl), 0
 	call	_FindProgSym
 	jq	c, NoSRCProgram
 	call	_ChkInRAM
@@ -171,13 +177,33 @@ InsertBreakpointLoop:
 	ret
 
 NoSRCProgram:
-	pop	hl
-CRCNotMatch:
+	ld	hl, NoSRCProgramString
 	pop	bc
-WrongVersion:
-NoDBGAppvar:
+DispStringOP1:
+	pop	bc
+	call	_PutS
+	call	_NewLine
+	ld	hl, OP1 + 1
+	call	_PutS
+	call	_GetKey
 	scf
 	ret
+CRCNotMatch:
+	ld	hl, CRCNotMatchString
+	jq	DispStringOP1
+WrongVersion:
+	ld	hl, WrongVersionString
+DispStringReturn:
+	call	_PutS
+	call	_NewLine
+	ld	hl, RecompileString
+	call	_PutS
+	call	_GetKey
+	scf
+	ret
+NoDBGAppvar:
+	ld	hl, NoDBGAppvarString
+	jq	DispStringReturn
 	
 icedbg_open:
 ; This is the breakpoint handler
@@ -294,87 +320,69 @@ StepCode:
 	dec	de					; DE = call address
 	call	GetLineFromAddress			; Get the line number
 	ld	(DEBUG_CURRENT_LINE), hl
+	inc	hl
 	ex	de, hl					; DE = input line number
 	
-; Get relative line in (sub)program: 
-; 
-;unmangleLine(mangledLine)
-;  startLine = 1
-;  while (sourceProgramsRemain())
-;    prog = nextSourceProgram()
-;    if (mangledLine < prog.startLine)
-;      break
-;    else if (mangledLine < prog.endLine)
-;      startLine = prog.startLine
-;    else
-;      startLine += prog.end_line - prog.startLine
-;  return mangledLine - startLine + 1
+; See docs/subprograms algorithm.c for the algorithm
 
-	ld	ix, ProgramsPointers - 6
+	ld	ix, ProgramsPointers
 	ld	iy, (SUBPROGRAMS_START)
-	ld	bc, 1					; BC = startLine
-	ld	a, (iy)
-	lea	iy, iy + 1 - SUBPROGRAM_SIZE
-.loop:
-	lea	ix, ix + 6
-	lea	iy, iy + SUBPROGRAM_SIZE
+	ld	c, (iy)
+	ld	a, c
+	ld	b, 6
+	mlt	bc
+	add	ix, bc
+	ld	c, a
+	ld	b, SUBPROGRAM_SIZE
+	mlt	bc
+	inc	bc
+	add	iy, bc
+	ld	c, a
+.loop1:
+	lea	ix, ix - 6
+	lea	iy, iy - SUBPROGRAM_SIZE
+	dec	a
+	jq	z, .found
 	ld	hl, (iy + SUBPROGRAM_START)
 	scf
 	sbc.s	hl, de
-	jr	nc, .found
+	jq	nc, .loop1
 	ld	hl, (iy + SUBPROGRAM_END)
-	scf
-	sbc.s	hl, de
-	jr	c, .lastcheck
-	ld	bc, (iy + SUBPROGRAM_START)
-	jr	.advance
-.lastcheck:
-	add	hl, de
-	push	de
-	ld	de, (iy + SUBPROGRAM_START)
-	pop	de
 	or	a, a
 	sbc.s	hl, de
-	add.s	hl, bc
-	push	hl
-	pop	bc
-.advance:
-	dec	a
-	jr	nz, .loop
-	jr	.getprogram
+	jq	c, .loop1
 .found:
-	lea	ix, ix - 6
-	lea	iy, iy - SUBPROGRAM_SIZE
-.getprogram:
-	lea	hl, iy + SUBPROGRAM_NAME		; Pointer to progrm name
-	push	hl
-	ex	de, hl
-	or	a, a
-	sbc	hl, bc					; HL = line number of local program
-	ld	de, (iy + SUBPROGRAM_LINES)		; DE = amount of lines
-	ex.s	de, hl
+	ld	hl, (ix)
+	ld	(PROG_START - iy + iy_base), hl
+	ld	hl, (ix + 3)
+	ld	(PROG_SIZE - iy + iy_base), hl
+	exx
+	push	iy
+	call	_ZeroOP1
+	lea	hl, iy + SUBPROGRAM_NAME - 1
+	call	_Mov9ToOP1
 	ld	iy, iy_base
-	ld	(DEBUG_AMOUNT_OF_LINES), hl
-	ld	bc, (ix + 0)				; Pointer to program data
-	ld	(PROG_START), bc
-	ld	bc, (ix + 3)				; BC = size of program data
-	ld	(PROG_SIZE), bc
-	exx						; Backup all registers
-	ld	(X_POS), 1
-	ld	(Y_POS), 1
 	ld	hl, ProgramString
 	call	PrintString
-	pop	hl					; Display program name
-	ld	b, 8
-.progloop:
-	ld	a, (hl)
-	or	a, a
-	jr	z, .done
-	call	PrintChar
-	inc	hl
-	djnz	.progloop
-.done:
+	ld	hl, OP1 + 1
+	call	PrintString
+	pop	iy
 	exx
+	push	de
+	ld	de, (iy + SUBPROGRAM_END)
+	push	af
+	push	bc
+	push	iy
+	call	GetRelativeLine				; Amount of programs
+	pop	iy
+	pop	bc
+	pop	af
+	pop	de
+	push	hl
+	call	GetRelativeLine				; Current line offset in program
+	pop	de
+	ex.s	de, hl
+	ld	iy, iy_base
 	ld	bc, 14					; If current line <= 13 or amount of lines <= 24
 	ld	a, d					;    current line <= 13
 	or	a, a
@@ -439,8 +447,8 @@ GetBASICTokenLoopDispColon:
 	pop	de
 	pop	hl
 	ld	a, ':'					; Display the colon
-	jq	z, .nobreakpoint
-	ld	a, 0F8h					; If so, display a dot instead of the colon
+	;jq	z, .nobreakpoint
+	;ld	a, 0F8h					; If so, display a dot instead of the colon
 .nobreakpoint:
 	ld	ixl, a					; Never invert it
 	call	PrintChar
@@ -1200,7 +1208,8 @@ IsBreakpointAtLine:
 	or	a, a
 	ret	z
 	ld	ix, BreakpointsStart
-.loop:	ld	de, (ix + BREAKPOINT_LINE)
+.loop:	
+	ld	de, (ix + BREAKPOINT_LINE)
 	or	a, a
 	sbc	hl, de
 	add	hl, de
@@ -1209,9 +1218,67 @@ IsBreakpointAtLine:
 	dec	a
 	jq	nz, .loop
 	ret
-.found:	dec	a
+.found:	
+	dec	a
 	inc	a
 	ret
+	
+GetRelativeLine:
+; Inputs:
+;    A = program index
+;    C = total amount of programs
+;   DE = line number
+;   IY = pointer to current program
+; Outputs:
+;   HL = relative line number
+	neg
+	add	a, c
+	ld	b, a					; B = Amount of programs left
+	ld	a, (iy + SUBPROGRAM_DEPTH)		; A = depth
+	push	de
+	exx						; DE' = upper bound
+	ld	bc, (iy + SUBPROGRAM_START)		; BC' = lower bound
+	ld	hl, (iy + SUBPROGRAM_START)
+	ex	de, hl
+	pop	hl
+	push	hl
+	or	a, a
+	sbc	hl, de
+	pop	de
+.loop:
+	ld	(Temp), hl
+.loop2:
+	exx
+.loop3:
+	ld	hl, (Temp)
+	dec	b
+	ret	z
+	lea	iy, iy + SUBPROGRAM_SIZE
+	ld	c, a
+	inc	a
+	cp	a, (iy + SUBPROGRAM_DEPTH)		; prog.depth = prog2.depth + 1?
+	ld	a, c
+	jq	nz, .loop3
+	exx
+	ld	hl, (iy + SUBPROGRAM_START)
+	or	a, a
+	sbc.s	hl, bc
+	jq	c, .loop2
+	ld	hl, (iy + SUBPROGRAM_END)
+	scf
+	sbc.s	hl, de
+	jq	nc, .loop2
+	adc	hl, de
+	push	de
+	ld	de, (iy + SUBPROGRAM_START)
+	or	a, a
+	sbc	hl, de
+	ex	de, hl
+	ld	hl, (Temp)
+	scf
+	sbc	hl, de
+	pop	de
+	jq	.loop
 	
 RestorePaletteUSB:
 ; Restore palette, usb area, variables and registers
@@ -1340,6 +1407,7 @@ ClearScreen:
 	inc	de
 	ld	bc, lcdWidth * lcdHeight / 8 - 1
 	ldir
+	ld	iy, iy_base
 	ld	(X_POS), 0
 	ld	(Y_POS), 0
 	ret
@@ -1516,11 +1584,23 @@ SlotOptionsString:
 	db	"Slot Type Name      DataPtr Size  Offset", 0
 ProgramString:
 	db	"Program: ", 0
+NoDBGAppvarString:
+	db	"Can't find debug appvar", 0
+WrongVersionString:
+	db	"Wrong debug appvar version", 0
+CRCNotMatchString:
+	db	"Source prog doesn't match:", 0
+NoSRCProgramString:
+	db	"Source program not found:", 0
+RecompileString:
+	db	"Please recompile!", 0
 	
 NumbersKeyPresses:
 	db	sk9, sk8, sk7, sk6, sk5, sk4, sk3, sk2, sk1, sk0
 	
 DBGProgStart:
+	dl	0
+Temp:
 	dl	0
 
 _DefaultTIFontData:
