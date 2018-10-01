@@ -374,6 +374,7 @@ StepCode:
 	push	bc
 	push	iy
 	call	GetRelativeLine				; Amount of programs
+	inc	hl
 	pop	iy
 	pop	bc
 	pop	af
