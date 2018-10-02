@@ -353,7 +353,8 @@ StepCode:
 	sbc.s	hl, de
 	jq	c, .loop1
 .found:
-	ld	(SubprogramIndex), a
+	ld	(SubprogramIndex1), a
+	ld	(SubprogramIndex2), a
 	ld	hl, (ix)
 	ld	(PROG_START - iy + iy_base), hl
 	ld	hl, (ix + 3)
@@ -445,8 +446,7 @@ GetBASICTokenLoopDispColon:
 	push	de
 	ld	hl, (DEBUG_LINE_START)			; Line = offset + start
 	add	hl, de
-	ex	de, hl
-SubprogramIndex = $+1
+SubprogramIndex1 = $+1
 	ld	a, 0
 	call	LocalToGlobalLine
 	call	IsBreakpointAtLine			; Check if there's a breakpoint placed at this global line
@@ -595,24 +595,28 @@ BASICDebuggerMoveCursor:
 	jq	BASICDebuggerDisplayCursor
 	
 BASICDebuggerSwitchBreakpoint:
-;	push	bc
-;	ld	hl, (DEBUG_LINE_START)
-;	ld	b, 1
-;	mlt	bc
-;	add	hl, bc
-;	call	IsBreakpointAtLine
-;	jq	z, .insert
-;	call	RemoveBreakpointFromLine
-;	ld	a, ':'
-;	jq	.dispchar
-;.insert:
-;	call	InsertFixedBreakpointAtLine
-;	ld	a, 0F8h
-;.dispchar:
-;	ld	(X_POS), 1
-;	call	PrintChar
-;	dec	(X_POS)
-;	pop	bc
+	push	bc
+	ld	hl, (DEBUG_LINE_START)
+	dec	c
+	ld	b, 1
+	mlt	bc
+	add	hl, bc
+SubprogramIndex2 = $+1
+	ld	a, 0
+	call	LocalToGlobalLine
+	call	IsBreakpointAtLine
+	jq	z, .insert
+	call	RemoveBreakpointFromLine
+	ld	a, ':'
+	jq	.dispchar
+.insert:
+	call	InsertFixedBreakpointAtLine
+	ld	a, 0F8h
+.dispchar:
+	ld	(X_POS), 1
+	call	PrintChar
+	dec	(X_POS)
+	pop	bc
 	jq	BASICDebuggerKeyWait
 	
 BASICDebuggerRun:
@@ -1258,9 +1262,10 @@ end repeat
 LocalToGlobalLine:
 ; Inputs:
 ;   -  A = program index
-;   - DE = local line
+;   - HL = local line
 ; Outputs:
 ;   - HL = global line
+	ex	de, hl
 	push	iy
 	push	bc
 	ld	iy, (LINES_START)
