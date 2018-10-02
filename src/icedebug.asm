@@ -379,6 +379,7 @@ StepCode:
 	sbc	hl, de
 	push	hl
 	ld	iy, iy_base
+	ld	(DEBUG_AMOUNT_OF_LINES), hl
 	ld	hl, (DEBUG_CURRENT_LINE)
 	call	GlobalToLocalLine
 	ex	de, hl
@@ -557,8 +558,9 @@ BASICDebuggerKeyUp:
 	dec	c
 	jq	BASICDebuggerMoveCursor
 BASICDebuggerKeyDown:
-	ld	b, 24
+	ld	b, 25
 	ld	hl, (DEBUG_AMOUNT_OF_LINES)
+	inc	hl					; Remember the "PROGRAM:.." text at the bottom row
 	ld	a, h
 	or	a, a
 	jq	nz, .docheck
@@ -1570,6 +1572,11 @@ iy_base: org iy
 	AMOUNT_OF_TEMP_BREAKPOINTS:	db 0
 	
 ; Stepping through code
+	PROG_SIZE:			dl 0
+	PROG_START:			dl 0
+	DEBUG_CURRENT_LINE:		dl 0
+	DEBUG_LINE_START:		dl 0
+	DEBUG_AMOUNT_OF_LINES:		dl 0
 	
 ; Temp variables
 	PALETTE_ENTRIES_BACKUP:		rb 4
@@ -1579,15 +1586,6 @@ iy_base: org iy
 ; Other variables
 	STEP_MODE:			db 0
 	RESTORE_BREAKPOINT_LINE:	dl 0
-	
-	
-	
-	PROG_SIZE:			dl 0
-	PROG_START:			dl 0
-	INPUT_LINE:			dl 0
-	DEBUG_CURRENT_LINE:		dl 0
-	DEBUG_LINE_START:		dl 0
-	DEBUG_AMOUNT_OF_LINES:		dl 0
 org iy_base + $ - $$
 
 BreakpointsStart:
