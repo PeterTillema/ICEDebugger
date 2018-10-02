@@ -30,12 +30,17 @@ BREAKPOINT_CODE    := 7
 BREAKPOINT_TYPE_FIXED  := 0
 BREAKPOINT_TYPE_TEMP   := 1
 
-SUBPROGRAM_SIZE    := 15
+SUBPROGRAM_SIZE    := 14
 SUBPROGRAM_NAME    := 0
 SUBPROGRAM_START   := 8
 SUBPROGRAM_END     := 10
-SUBPROGRAM_DEPTH   := 12
-SUBPROGRAM_CRC     := 13
+SUBPROGRAM_CRC     := 12
+
+LINE_SIZE          := 7
+LINE_PROG_INDEX    := 0
+LINE_ADDR_OFFSET   := 1
+LINE_LOCAL_LINE    := 3
+LINE_JUMP_OFFSET   := 5
 
 STEP_RETURN        := 1
 STEP               := 2
@@ -141,12 +146,9 @@ NoVariablesSkip:
 	inc	hl
 	inc	hl
 	inc	hl
-	add	hl, de					; Each line is 6 bytes worth
+repeat LINE_SIZE
 	add	hl, de
-	add	hl, de
-	add	hl, de
-	add	hl, de
-	add	hl, de
+end repeat
 	ld	(STARTUP_BREAKPOINTS), hl		; Start of startup breakpoints
 	ld	c, (hl)					; Amount of startup breakpoints
 	ld	b, 3
@@ -182,7 +184,6 @@ NoSRCProgram:
 DispStringOP1:
 	pop	bc
 	call	_PutS
-	call	_NewLine
 	ld	hl, OP1 + 1
 	call	_PutS
 	call	_GetKey
@@ -293,7 +294,7 @@ Quit:
 							; with a "call <debugger>", but we do need to run the underlying code.
 	or	a, a
 	call	nz, DecreaseCallReturnAddress
-	call	RestorePaletteUSB			; Restore palette, USB area, LCD control and registers, and return
+	call	RestorePalette			; Restore palette, USB area, LCD control and registers, and return
 	pop	ix
 	pop	hl
 	ld	(mpLcdUpbase), hl
@@ -356,7 +357,6 @@ StepCode:
 	ld	(PROG_START - iy + iy_base), hl
 	ld	hl, (ix + 3)
 	ld	(PROG_SIZE - iy + iy_base), hl
-	exx
 	push	iy
 	call	_ZeroOP1
 	lea	hl, iy + SUBPROGRAM_NAME - 1
@@ -367,23 +367,22 @@ StepCode:
 	ld	hl, OP1 + 1
 	call	PrintString
 	pop	iy
-	exx
-	push	de
-	ld	de, (iy + SUBPROGRAM_END)
-	push	af
-	push	bc
-	push	iy
-	call	GetRelativeLine				; Amount of programs
-	inc	hl
-	pop	iy
-	pop	bc
-	pop	af
-	pop	de
-	push	hl
-	call	GetRelativeLine				; Current line offset in program
-	pop	de
+	ld	de, (iy + SUBPROGRAM_START)
 	ex.s	de, hl
+	call	GlobalToLocalLineDec
+	push	hl
+	ld	de, (iy + SUBPROGRAM_END)
+	ex.s	de, hl
+	call	GlobalToLocalLineDec
+	pop	de
+	or	a, a
+	sbc	hl, de
+	push	hl
 	ld	iy, iy_base
+	ld	hl, (DEBUG_CURRENT_LINE)
+	call	GlobalToLocalLine
+	ex	de, hl
+	pop	hl
 	ld	bc, 14					; If current line <= 13 or amount of lines <= 24
 	ld	a, d					;    current line <= 13
 	or	a, a
@@ -440,18 +439,8 @@ GetBASICTokenLoopDispColon:
 	bit	7, d					; If DE < 0, don't display anything
 	jq	nz, GetBASICTokenLoop
 	push	ix					; Line is visible; check whether a breakpoint is placed on this line
-	push	hl
-	push	de
-	ld	hl, (DEBUG_LINE_START)			; Line = offset + start
-	add	hl, de
-	call	IsBreakpointAtLine			; Check if there's a breakpoint at this line
-	pop	de
-	pop	hl
-	ld	a, ':'					; Display the colon
-	;jq	z, .nobreakpoint
-	;ld	a, 0F8h					; If so, display a dot instead of the colon
-.nobreakpoint:
-	ld	ixl, a					; Never invert it
+	ld	a, ':'
+	ld	ixl, a
 	call	PrintChar
 	pop	ix					; We pop ix here to make sure the debug dot isn't highlighted: BreakpointsStart and 0xFF != 1
 GetBASICTokenLoop:
@@ -995,7 +984,7 @@ SafeExit:
 	ld	(hl), a
 	ld	hl, vRAM
 	ld	(mpLcdUpbase), hl
-	call	RestorePaletteUSB			; Restore palette and USB area
+	call	RestorePalette			; Restore palette and USB area
 	ld	iy, flags				; And display a fancy status bar
 	jq	_DrawStatusBar
 	
@@ -1099,7 +1088,7 @@ InsertTempBreakpointAtLine:
 	ld	a, BREAKPOINT_TYPE_TEMP
 	db	006h					; ld b, *
 InsertFixedBreakpointAtLine:
-	assert	BREAKPOINT_TYPE_FIXED = 0
+assert	BREAKPOINT_TYPE_FIXED = 0
 	xor	a, a
 InsertBreakpointAtLine:
 	ld	b, a
@@ -1131,13 +1120,15 @@ DoInsertBreakpoint:
 	inc	hl
 	inc	hl
 	inc	hl
+repeat LINE_SIZE
 	add	hl, de
+end repeat
+assert LINE_ADDR_OFFSET = 1
+	inc	hl
+	ld	de, (hl)
+	ex.s	de, hl
+	ld	de, userMem + 1
 	add	hl, de
-	add	hl, de
-	add	hl, de
-	add	hl, de
-	add	hl, de
-	ld	hl, (hl)
 	ld	(ix + BREAKPOINT_ADDRESS), hl		; Program pointer
 	lea	de, ix + BREAKPOINT_CODE
 	ld	bc, 4
@@ -1178,7 +1169,9 @@ GetLineFromAddress:
 ;   HL = line number
 
 	ld	hl, (STARTUP_BREAKPOINTS)
-	ld	bc, -6
+assert LINE_ADDR_OFFSET = 1
+	inc	hl
+	ld	bc, -LINE_SIZE
 	exx
 	ld	hl, (LINES_START)
 	ld	hl, (hl)
@@ -1189,7 +1182,12 @@ GetLineFromAddress:
 	exx
 	add	hl, bc
 	push	hl
-	ld	hl, (hl)
+	push	de
+	ld	de, (hl)
+	ex.s	de, hl
+	ld	de, userMem + 1
+	add	hl, de
+	pop	de
 	scf
 	sbc	hl, de
 	pop	hl
@@ -1224,72 +1222,22 @@ IsBreakpointAtLine:
 	inc	a
 	ret
 	
-GetRelativeLine:
-; Inputs:
-;    A = program index
-;    C = total amount of programs
-;   DE = line number
-;   IY = pointer to current program
-; Outputs:
-;   HL = relative line number
-	neg
-	add	a, c
-	ld	b, a					; B = Amount of programs left
-	ld	a, (iy + SUBPROGRAM_DEPTH)		; A = depth
-	push	de
-	exx						; DE' = upper bound
-	ld	bc, (iy + SUBPROGRAM_START)		; BC' = lower bound
-	ld	hl, (iy + SUBPROGRAM_START)
+GlobalToLocalLineDec:
+; Inputs: HL = global line
+; Outputs: HL = local line
+	dec	hl
+GlobalToLocalLine:
 	ex	de, hl
-	pop	hl
-	push	hl
-	or	a, a
-	sbc	hl, de
-	pop	de
-.loop:
-	ld	(Temp), hl
-.loop2:
-	exx
-.loop3:
-	ld	hl, (Temp)
-	dec	b
-	ret	z
-	lea	iy, iy + SUBPROGRAM_SIZE
-	ld	c, a
-	inc	a
-	cp	a, (iy + SUBPROGRAM_DEPTH)		; prog.depth = prog2.depth + 1?
-	ld	a, c
-	jq	nz, .loop3
-	exx
-	ld	hl, (iy + SUBPROGRAM_START)
-	or	a, a
-	sbc.s	hl, bc
-	jq	c, .loop2
-	ld	hl, (iy + SUBPROGRAM_END)
-	scf
-	sbc.s	hl, de
-	jq	nc, .loop2
-	adc	hl, de
-	push	de
-	ld	de, (iy + SUBPROGRAM_START)
-	or	a, a
-	sbc	hl, de
-	ex	de, hl
-	ld	hl, (Temp)
-	scf
-	sbc	hl, de
-	pop	de
-	jq	.loop
+	ld	hl, (LINES_START - iy + iy_base)
+repeat LINE_SIZE
+	add	hl, de
+end repeat
+	ld	de, LINE_LOCAL_LINE + 3
+	add	hl, de
+	ld	de, (hl)
+	ex.s	de, hl
+	ret
 	
-RestorePaletteUSB:
-; Restore palette, usb area, variables and registers
-	ld	hl, usbArea
-	ld	(hl), 0
-	push	hl
-	pop	de
-	inc	de
-	ld	bc, 14305
-	ldir
 RestorePalette:
 	ld	de, mpLcdPalette
 	lea	hl, PALETTE_ENTRIES_BACKUP
@@ -1592,7 +1540,7 @@ WrongVersionString:
 CRCNotMatchString:
 	db	"Source prog doesn't match:", 0
 NoSRCProgramString:
-	db	"Source program not found:", 0
+	db	"Source program not found: ", 0
 RecompileString:
 	db	"Please recompile!", 0
 	
@@ -1610,24 +1558,36 @@ _DefaultTIFontData:
 include 'font.asm'
 
 iy_base: org iy
-	PROG_SIZE:			dl 0
-	PROG_START:			dl 0
-	PALETTE_ENTRIES_BACKUP:		rb 4
-	INPUT_LINE:			dl 0
-	X_POS:				db 0
-	Y_POS:				db 0
+; Pointers in debug appvar
 	SUBPROGRAMS_START:              dl 0
 	VARIABLE_START:			dl 0
 	LINES_START:			dl 0
 	STARTUP_BREAKPOINTS:		dl 0
 	LABELS_START:			dl 0
+	
+; Breakpoints stuff
 	AMOUNT_OF_BREAKPOINTS:		db 0
+	AMOUNT_OF_TEMP_BREAKPOINTS:	db 0
+	
+; Stepping through code
+	
+; Temp variables
+	PALETTE_ENTRIES_BACKUP:		rb 4
+	X_POS:				db 0
+	Y_POS:				db 0
+	
+; Other variables
+	STEP_MODE:			db 0
+	RESTORE_BREAKPOINT_LINE:	dl 0
+	
+	
+	
+	PROG_SIZE:			dl 0
+	PROG_START:			dl 0
+	INPUT_LINE:			dl 0
 	DEBUG_CURRENT_LINE:		dl 0
 	DEBUG_LINE_START:		dl 0
 	DEBUG_AMOUNT_OF_LINES:		dl 0
-	STEP_MODE:			db 0
-	AMOUNT_OF_TEMP_BREAKPOINTS:	db 0
-	RESTORE_BREAKPOINT_LINE:	dl 0
 org iy_base + $ - $$
 
 BreakpointsStart:
@@ -1638,3 +1598,4 @@ ProgramsPointers:
 	
 SCREEN_START:
 	rb	lcdWidth * lcdHeight / 8 + 7
+libraryEnd:
