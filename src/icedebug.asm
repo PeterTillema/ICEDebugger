@@ -353,6 +353,7 @@ StepCode:
 	sbc.s	hl, de
 	jq	c, .loop1
 .found:
+	ld	(SubprogramIndex), a
 	ld	hl, (ix)
 	ld	(PROG_START - iy + iy_base), hl
 	ld	hl, (ix + 3)
@@ -440,7 +441,21 @@ GetBASICTokenLoopDispColon:
 	bit	7, d					; If DE < 0, don't display anything
 	jq	nz, GetBASICTokenLoop
 	push	ix					; Line is visible; check whether a breakpoint is placed on this line
+	push	hl
+	push	de
+	ld	hl, (DEBUG_LINE_START)			; Line = offset + start
+	add	hl, de
+	ex	de, hl
+SubprogramIndex = $+1
+	ld	a, 0
+	call	LocalToGlobalLine
+	call	IsBreakpointAtLine			; Check if there's a breakpoint placed at this global line
+	pop	de
+	pop	hl
 	ld	a, ':'
+	jq	z, .nobreakpoint
+	ld	a, 0F8h					; If so, display a dot instead of the colon
+.nobreakpoint:
 	ld	ixl, a
 	call	PrintChar
 	pop	ix					; We pop ix here to make sure the debug dot isn't highlighted: BreakpointsStart and 0xFF != 1
@@ -1239,6 +1254,42 @@ end repeat
 	ld	de, (hl)
 	ex.s	de, hl
 	ret
+	
+LocalToGlobalLine:
+; Inputs:
+;   -  A = program index
+;   - DE = local line
+; Outputs:
+;   - HL = global line
+	push	iy
+	push	bc
+	ld	iy, (LINES_START)
+	ld	bc, (iy)
+	lea	iy, iy + 3 - LINE_SIZE
+	scf
+	sbc	hl, hl
+.loop:
+	lea	iy, iy + LINE_SIZE
+	inc	hl
+	ex	af, af'
+	ld	a, b
+	or	a, c
+	jr	z, .return
+	dec	bc
+	ex	af, af'
+	cp	a, (iy + LINE_PROG_INDEX)
+	jr	nz, .loop
+	push	hl
+	ld	hl, (iy + LINE_LOCAL_LINE)
+	or	a, a
+	sbc.s	hl, de
+	pop	hl
+	jr	nz, .loop
+.return:
+	pop	bc
+	pop	iy
+	ret
+	
 	
 RestorePalette:
 	ld	de, mpLcdPalette
