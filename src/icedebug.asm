@@ -379,6 +379,7 @@ StepCode:
 	pop	de
 	or	a, a
 	sbc	hl, de
+	inc	hl
 	push	hl
 	ld	iy, iy_base
 	ld	(DEBUG_AMOUNT_OF_LINES), hl
@@ -695,22 +696,20 @@ InsertStepMode:
 	call	InsertTempBreakpointAtLine
 	ld	hl, (LINES_START)			; Get the jump address of the line
 	ld	de, (DEBUG_CURRENT_LINE)
-	inc	de
-	add	hl, de					; Each line is worth 6 bytes
+repeat LINE_SIZE
 	add	hl, de
+end repeat
+	ld	de, LINE_JUMP_OFFSET + 3
 	add	hl, de
-	add	hl, de
-	add	hl, de
-	add	hl, de
-	ld	hl, (hl)
-	add	hl, de					; If it's zero, don't do anything with it
-	or	a, a
-	sbc	hl, de
+	ld	de, (hl)
+	ex.s	de, hl
+	ld	a, h					; If it's zero, don't do anything with it
+	or	a, l
 	jq	z, .return
 	inc	hl					; If it's not a -1, it's a real jump
-	add	hl, de
-	or	a, a
-	sbc	hl, de
+	ld	a, h
+	and	a, l
+	inc	a
 	jq	nz, .insertjump
 	ld	a, (STEP_MODE)
 	cp	a, STEP_NEXT
@@ -730,6 +729,8 @@ assert STEP < STEP_NEXT & STEP_OVER < STEP_NEXT
 	cp	a, STEP_NEXT
 	jq	nc, .return
 	dec	hl					; Place temp breakpoint at the jump address
+	ld	de, userMem + 1
+	add	hl, de
 	ex	de, hl
 	call	GetLineFromAddress
 	call	InsertTempBreakpointAtLine
@@ -955,7 +956,7 @@ MemoryDisplayCursor:
 	ld	hl, NumbersKeyPresses
 	ld	bc, 16
 	cpir
-	jq	z, .numpress
+	jq	z, MemoryHexadecimalPressed
 	exx
 	cp	a, skClear
 	jq	z, .return
@@ -1012,7 +1013,7 @@ MemoryDisplayCursor:
 	pop	hl
 	ld	(MEMORY_START_ADDR), hl
 	jq	MainMenu
-.numpress:
+MemoryHexadecimalPressed:
 	pop	hl
 	push	hl
 	ld	e, c
@@ -1031,7 +1032,7 @@ MemoryDisplayCursor:
 	cp	a, 0D0h
 	ld	a, e
 	exx
-	jq	nz, .wait
+	jq	nz, MemoryDisplayCursor.wait
 	ld	(hl), 0
 	inc	hl
 	ld	(hl), 0FFh
@@ -1078,7 +1079,7 @@ MemoryDisplayCursor:
 	add	a, c
 	ld	(hl), a
 	exx
-	jq	.right
+	jq	MemoryDisplayCursor.right
 	
 ; =======================================================================================
 ViewStrings:
@@ -1319,6 +1320,7 @@ DoInsertBreakpoint:
 	jq	nz, .fixed
 	inc	(AMOUNT_OF_TEMP_BREAKPOINTS)
 .fixed:
+	inc	a
 	ld	ix, BreakpointsStart
 	ld	c, (AMOUNT_OF_BREAKPOINTS)
 	inc	(AMOUNT_OF_BREAKPOINTS)
@@ -1367,9 +1369,8 @@ RemoveBreakpoint:
 	ld	c, a
 	ld	b, BREAKPOINT_SIZE
 	mlt	bc
-	add	ix, bc
-	lea	de, ix - BREAKPOINT_SIZE
-	lea	hl, ix
+	lea	de, ix
+	lea	hl, ix + BREAKPOINT_SIZE
 	ldir
 	ret
 
