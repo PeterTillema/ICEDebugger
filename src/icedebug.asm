@@ -129,8 +129,6 @@ DbgVarInRAM:
 	ld	(RESTORE_BREAKPOINT_LINE), bc		; -1 if no restore
 	ld	(VARIABLE_START), hl
 	xor	a, a
-	push	hl
-	pop	hl
 	ld	b, (hl)					; Amount of variables
 	inc	hl
 	cp	a, b
@@ -157,6 +155,8 @@ end repeat
 	add	hl, bc
 	ld	(LABELS_START), hl			; Start of labels
 	call	ti_CloseAll				; Close all FILEIOC slots
+	ld	hl, ramStart
+	ld	(MEMORY_START_ADDR), hl
 	ld	hl, (STARTUP_BREAKPOINTS)
 	ld	a, (hl)
 	or	a, a
@@ -878,7 +878,7 @@ VariableOffset2 = $+2
 	
 ; =======================================================================================
 ViewMemory:
-	ld	hl, ramStart
+	ld	hl, (MEMORY_START_ADDR)
 	ld	b, 0
 	ld	c, 0
 ViewMemoryPartClearScreen:
@@ -1010,6 +1010,7 @@ MemoryDisplayCursor:
 	jq	MemoryDisplayCursor
 .return:
 	pop	hl
+	ld	(MEMORY_START_ADDR), hl
 	jq	MainMenu
 .numpress:
 	pop	hl
@@ -1832,6 +1833,7 @@ iy_base: org iy
 ; Other variables
 	STEP_MODE:			db 0
 	RESTORE_BREAKPOINT_LINE:	dl 0
+	MEMORY_START_ADDR:		dl 0
 org iy_base + $ - $$
 
 BreakpointsStart:

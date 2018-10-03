@@ -16,7 +16,7 @@ Main menu: press `[UP]` and `[DOWN]` to select an option and `[ENTER]` to go to 
     
 2. View/edit variables: another quite useful feature! Here you can take a look at all your variables, what their values are and change them. Press `[UP]` and `[DOWN]` to select a variable (note that if you have more than 25 used variables, you can scroll too), press `[ENTER]` to edit a variable and `[CLEAR]` to return. Editing a variable is very easy: just type in the digits and press `[ENTER]` again. Now the variable has a new value.
 
-3. View/edit memory: here you can view and edit your memory (RAM-only). This might be useful if you want to look at the VAT or sneak peek at the OS code. Press the arrow keys to navigate through the memory, press `[ENTER]` to jump to a memory address (then type in the hexadecimals), or `[CLEAR]` to return to the main menu. If you press any of the hexadecimals, the byte will be immediately changed, without option to revert it, so be careful!
+3. View/edit memory: here you can view and edit your memory (editing: RAM-only). This might be useful if you want to look at the VAT or sneak peek at the OS code. Press the arrow keys to navigate through the memory, press `[ENTER]` to jump to a memory address (type in the hexadecimals), or `[CLEAR]` to return to the main menu. If you press any of the hexadecimals 2 times (2 nibbles), the byte will be immediately changed, without option to revert it, so be careful!
 
 4. View OS strings: _not implemented yet._
 
