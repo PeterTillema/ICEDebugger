@@ -604,6 +604,34 @@ BASICDebuggerSwitchBreakpoint:
 SubprogramIndex2 = $+1
 	ld	a, 0
 	call	LocalToGlobalLine
+	ld	de, (LINES_START)
+	ex	de, hl
+repeat LINE_SIZE
+	add	hl, de
+end repeat
+	ld	de, LINE_ADDR_OFFSET + 3
+	add	hl, de
+	ld	hl, (hl)
+	ex.s	hl, de
+	ld	hl, userMem + 1
+	add	hl, de
+	ex	de, hl
+	call	GetLineFromAddress
+	push	hl
+	call	GlobalToLocalLine
+	ld	de, (DEBUG_LINE_START)
+	or	a, a
+	sbc	hl, de
+	inc	l
+	ld	b, a
+	ld	a, l
+	add	a, a
+	add	a, a
+	add	a, a
+	add	a, l
+	inc	a
+	ld	(Y_POS), a
+	pop	hl
 	call	IsBreakpointAtLine
 	jq	z, .insert
 	call	RemoveBreakpointFromLine
@@ -617,7 +645,7 @@ SubprogramIndex2 = $+1
 	call	PrintChar
 	dec	(X_POS)
 	pop	bc
-	jq	BASICDebuggerKeyWait
+	jq	BASICDebuggerDisplayCursor
 	
 BASICDebuggerRun:
 	ld	a, STEP_RETURN
