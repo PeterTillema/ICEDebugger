@@ -827,7 +827,7 @@ GetVariableNumberLoop:					; Wait for a number/Enter to be pressed
 	call	GetKeyAnyFast
 	cp	a, skEnter				; We pressed Enter so get the value and replace it
 	jq	z, GetVariableNewNumber
-	ld	hl, NumbersKeyPresses
+	ld	hl, NumbersKeyPresses + 6
 	ld	bc, 10
 	cpir
 	jq	nz, GetVariableNumberLoop
@@ -877,14 +877,19 @@ VariableOffset2 = $+2
 	jq	PrintAllVariables			; Display all the variables again
 	
 ; =======================================================================================
-ViewMemory:						; Only static thing for now!
+ViewMemory:
 	ld	hl, ramStart
+	ld	b, 0
+	ld	c, 0
+ViewMemoryPartClearScreen:
+	exx
+	call	ClearScreen
+	exx
+	push	hl
+	push	bc
 	ld	c, 23
-	ld	(Y_POS), 0
+	ld	(Y_POS), 5
 MemoryDrawLine:
-	ld	a, (Y_POS)
-	add	a, 10
-	ld	(Y_POS), a
 	ld	(X_POS), 0
 	ld	a, 0F2h					; $
 	call	PrintChar
@@ -913,10 +918,166 @@ MemoryDrawLineOfChars:
 .chartoolarge:
 	call	PrintChar
 	djnz	MemoryDrawLineOfChars
+	ld	a, (Y_POS)
+	add	a, 10
+	ld	(Y_POS), a
 	dec	c
 	jq	nz, MemoryDrawLine
+	pop	bc
+MemoryDisplayCursor:
+	ld	hl, SCREEN_START - 1
+	ld	a, l
+	or	a, 7
+	ld	l, a
+	inc	hl
+	ld	a, c
+	add	a, a
+	ld	e, a
+	add	a, a
+	add	a, a
+	add	a, e
+	add	a, 8 + 5
+	ld	e, a
+	ld	d, lcdWidth / 8
+	mlt	de
+	add	hl, de
+	ld	a, b
+	add	a, a
+	add	a, b
+	add	a, 8
+	ld	e, a
+	ld	d, 0
+	add	hl, de
+	ld	(hl), 0FFh
+.wait:
 	call	GetKeyAnyFast
+	exx
+	ld	hl, NumbersKeyPresses
+	ld	bc, 16
+	cpir
+	jq	z, .numpress
+	exx
+	cp	a, skClear
+	jq	z, .return
+	cp	a, skUp
+	jq	z, .up
+	cp	a, skDown
+	jq	z, .down
+	cp	a, skLeft
+	jq	z, .left
+	cp	a, skRight
+	jq	nz, .wait
+.right:
+	ld	a, b
+	cp	a, 7
+	jq	z, .rightadvance
+	inc	b
+	jq	.cont
+.rightadvance:
+	ld	b, 0
+.down:
+	ld	a, c
+	cp	a, 22
+	jq	z, .downadvance
+	inc	c
+	jq	.cont
+.downadvance:
+	pop	hl
+	ld	de, 8
+	add	hl, de
+	jq	ViewMemoryPartClearScreen
+.left:
+	ld	a, b
+	or	a, a
+	jq	z, .leftadvance
+	dec	b
+	jq	.cont
+.leftadvance:
+	ld	b, 7
+.up:
+	ld	a, c
+	or	a, a
+	jq	z, .upadvance
+	dec	c
+	jq	.cont
+.upadvance:
+	pop	hl
+	ld	de, -8
+	add	hl, de
+	jq	ViewMemoryPartClearScreen
+.cont:
+	ld	(hl), 0
+	jq	MemoryDisplayCursor
+.return:
+	pop	hl
 	jq	MainMenu
+.numpress:
+	pop	hl
+	push	hl
+	ld	e, c
+	exx
+	push	bc
+	exx
+	pop	bc
+	ld	a, b
+	ld	b, 8
+	mlt	bc
+	add	hl, bc
+	ld	c, a
+	add	hl, bc
+	call	_SetAToHLU
+	and	a, 0F0h
+	cp	a, 0D0h
+	ld	a, e
+	exx
+	jq	nz, .wait
+	ld	(hl), 0
+	inc	hl
+	ld	(hl), 0FFh
+	ld	e, a
+	ld	a, b
+	add	a, a
+	add	a, b
+	add	a, 8
+	ld	(X_POS), a
+	ld	a, c
+	add	a, a
+	ld	d, a
+	add	a, a
+	add	a, a
+	add	a, d
+	add	a, 5
+	ld	(Y_POS), a
+	push	de
+	ld	a, e
+	call	PrintByte.convert
+.wait2:
+	call	GetKeyAnyFast
+	exx
+	push	hl
+	ld	hl, NumbersKeyPresses
+	ld	bc, 16
+	cpir
+	pop	hl
+	ld	a, c
+	exx
+	jq	nz, .wait2
+	push	af
+	ld	(hl), 0
+	call	PrintByte.convert
+	exx
+	pop	af
+	ld	c, a
+	pop	de
+	ld	a, e
+	add	a, a
+	add	a, a
+	add	a, a
+	add	a, a
+	add	a, c
+	ld	(hl), a
+	exx
+	jq	.right
 	
 ; =======================================================================================
 ViewStrings:
@@ -1307,17 +1468,17 @@ LocalToGlobalLine:
 	ex	af, af'
 	ld	a, b
 	or	a, c
-	jr	z, .return
+	jq	z, .return
 	dec	bc
 	ex	af, af'
 	cp	a, (iy + LINE_PROG_INDEX)
-	jr	nz, .loop
+	jq	nz, .loop
 	push	hl
 	ld	hl, (iy + LINE_LOCAL_LINE)
 	or	a, a
 	sbc.s	hl, de
 	pop	hl
-	jr	nz, .loop
+	jq	nz, .loop
 .return:
 	pop	bc
 	pop	iy
@@ -1382,48 +1543,47 @@ PrintCursor:
 	ld	a, '>'
 	call	PrintChar
 	dec	(X_POS)
-CheckKeyLoop:
+.wait:
 	call	GetKeyAnyFast
 	cp	a, skEnter
-	jq	z, PressedEnter
+	jq	z, .enter
 	cp	a, skClear
-	jq	z, PressedClear
+	jq	z, .clear
 	cp	a, skDown
-	jq	z, MoveCursorDown
+	jq	z, .down
 	cp	a, skUp
-	jq	nz, CheckKeyLoop
-MoveCursorUp:
+	jq	nz, .wait
 	ld	a, c
 	add	a, d
-	jq	z, CheckKeyLoop
+	jq	z, .wait
 	sub	a, d
-	jq	z, PressedUp
+	jq	z, .pressedup
 	dec	c
-	jq	EraseCursor
-MoveCursorDown:
+	jq	.erase
+.down:
 	ld	a, c
 	add	a, d
 	cp	a, e
-	jq	z, CheckKeyLoop
+	jq	z, .wait
 	ld	a, c
 	cp	a, 25
-	jq	z, PressedDown
+	jq	z, .presseddown
 	inc	c
-EraseCursor:
+.erase:
 	xor	a, a
 	call	PrintChar
 	jq	PrintCursor
-PressedEnter:
+.enter:
 	scf
 	ret
-PressedClear:
+.clear:
 	or	a, 1
 	scf
 	ret
-PressedUp:
+.pressedup:
 	dec	d
 	ret
-PressedDown:
+.presseddown:
 	inc	d
 	ret
 	
@@ -1490,11 +1650,13 @@ DecreaseCallReturnAddress:
 GetKeyAnyFast:
 	push	ix
 	push	iy
+	push	hl
 	ld	iy, flags
 .loop:
 	call	_GetCSC
 	or	a, a
 	jq	z, .loop
+	pop	hl
 	pop	iy
 	pop	ix
 	di
@@ -1631,7 +1793,7 @@ RecompileString:
 	db	"Please recompile!", 0
 	
 NumbersKeyPresses:
-	db	sk9, sk8, sk7, sk6, sk5, sk4, sk3, sk2, sk1, sk0
+	db	skCos, skSin, skRecip, skPrgm, skMatrix, skMath, sk9, sk8, sk7, sk6, sk5, sk4, sk3, sk2, sk1, sk0
 	
 DBGProgStart:
 	dl	0
