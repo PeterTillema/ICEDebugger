@@ -395,7 +395,7 @@ inst jq, @arg1*, @arg2
 			define keep
 		end if
 		if defined after & arg2 eq after & ~defined keep
-		   define noerr
+			define noerr
 		else if arg1 metadata 1 scale 0 < 040o & ~elementsof off & -200o <= off & off < 200o
 		 	@ez80.emit byte arg1 metadata 1 scale 0 and 030o or 040o, \
 			           offset off
